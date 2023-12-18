@@ -13,7 +13,7 @@ set -eux
 #/opt/cross/arm-linux-musleabi
 #/opt/cross/aarch64-linux-musl
 
-mkdir /out
+mkdir /kernels
 
 TARGET_LIST="armel mipsel mipseb"
 for TARGET in $TARGET_LIST; do
@@ -61,20 +61,20 @@ for TARGET in $TARGET_LIST; do
 
 	# Copy out zImage (if present) and vmlinux (always)
 	if [ -f "/tmp/build/${TARGET}/arch/${ARCH}/boot/zImage" ]; then
-		cp "/tmp/build/${TARGET}/arch/${ARCH}/boot/zImage" /out/zImage.${TARGET}
+		cp "/tmp/build/${TARGET}/arch/${ARCH}/boot/zImage" /kernels/zImage.${TARGET}
 	fi
-	cp /tmp/build/${TARGET}/vmlinux /out/vmlinux.${TARGET}
+	cp /tmp/build/${TARGET}/vmlinux /kernels/vmlinux.${TARGET}
 
 	# Generate OSI profile
+	echo "[${TARGET}]" >> /kernels/osi.config
 	/panda/panda/plugins/osi_linux/utils/kernelinfo_gdb/run.sh \
-		/out/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
- 	echo "[${TARGET}]" >> /out/firmadyne_profiles.conf
-	cat /tmp/panda_profile.${TARGET} /out/firmadyne_profiles.conf
+		/kernels/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
+	cat /tmp/panda_profile.${TARGET} /kernels/osi.config
 
-    /dwarf2json/dwarf2json linux --elf /out/vmlinux.${TARGET} \
-		| xz - > /out//vmlinux.${TARGET}.json.xz
+    /dwarf2json/dwarf2json linux --elf /kernels/vmlinux.${TARGET} \
+		| xz - > /kernels/vmlinux.${TARGET}.json.xz
 done
 
-tar cvfz /app/kernels-latest.tar.gz /out
+echo "Built by linux_builder on $(date)" > /kernels/README.txt
 
-echo "Built by linux_builder on $(date)" > /out/README.txt
+tar cvfz /app/kernels-latest.tar.gz /kernels

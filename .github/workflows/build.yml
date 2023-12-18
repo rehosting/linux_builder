@@ -8,16 +8,28 @@ jobs:
     runs-on: panda-arc
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: 'true'
+      - name: Install git
+        run: sudo apt-get -qq update -y && sudo apt-get -qq install git -y
 
-      - name: Build 
-        run: |
-          docker build -t kernel_builder .
-          docker run --rm -v $PWD:/app kernel_builder /app/build.sh
-          tar czvf kernels-latest.tar.gz binaries
+      - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE. NOTE: this requires git > 2.18 (not on ubuntu 18.04 by default) to get .git directory and submodules
+        with:
+          fetch-depth: 0
+          #submodules: 'true'
+
+      # Instead of getting submodules with checkout, we can do it manually to control depth.
+      # We don't want a full Linux history
+      - name: Pull kernel source
+        run: git submodule update --init --depth 1
+
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: pandare/kernel_builder:latest
+
+      - name: Build
+        run: docker run --rm -v $PWD:/app pandare/kernel_builder /app/build.sh
 
       - name: Save package
         uses: actions/upload-artifact@v3
@@ -38,19 +50,16 @@ jobs:
           draft: true
           prerelease: false
 
-      - name: Upload release asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./kernels-latest.tar.gz
-          asset_name: kernels-latest.tar.gz
-          asset_content_type: application/gzip
-
       - name: Publish release
-        uses: StuYarrow/publish-release@v1.1.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          id: ${{ steps.create_release.outputs.id }}
+          files: kernels-latest.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref }}
+
+      #- name: Publish release
+      #  uses: StuYarrow/publish-release@v1.1.2
+      #  env:
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #  with:
+      #    id: ${{ steps.create_release.outputs.id }}
