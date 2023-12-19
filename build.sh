@@ -6,13 +6,6 @@ set -eux
 # while our configs are at config.[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
-# COMPILER PATHS:
-#/opt/cross/i686-linux-musl
-#/opt/cross/x86_64-linux-musl
-#/opt/cross/mips64el-linux-musl
-#/opt/cross/arm-linux-musleabi
-#/opt/cross/aarch64-linux-musl
-
 mkdir /kernels
 
 TARGET_LIST="armel mipsel mipseb"
@@ -33,7 +26,7 @@ for TARGET in $TARGET_LIST; do
 		export CROSS_COMPILE=/opt/cross/mipsel-linux-musl/bin/mipsel-linux-musl-
     elif [ $TARGET == "mipseb" ]; then
         export ARCH=mips
-		export CROSS_COMPILE=/opt/cross/mips64eb-linux-musl/bin/mips64eb-linux-musl-
+		export CROSS_COMPILE=/opt/cross/mipseb-linux-musl/bin/mipseb-linux-musl-
 	else
 		echo "Unknown target $TARGET"
 		exit 1
