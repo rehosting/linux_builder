@@ -56,5 +56,4 @@ jobs:
         with:
           files: kernels-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ steps.create_release.outputs.id }}
-          #tag_name: ${{ github.sha }}
+          tag_name: release_${{ github.sha }}
