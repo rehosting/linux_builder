@@ -69,7 +69,7 @@ for TARGET in $TARGET_LIST; do
 	echo "[${TARGET}]" >> /kernels/osi.config
 	/panda/panda/plugins/osi_linux/utils/kernelinfo_gdb/run.sh \
 		/kernels/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
-	cat /tmp/panda_profile.${TARGET} /kernels/osi.config
+	cat /tmp/panda_profile.${TARGET} >> /kernels/osi.config
 
     /dwarf2json/dwarf2json linux --elf /kernels/vmlinux.${TARGET} \
 		| xz - > /kernels/vmlinux.${TARGET}.json.xz

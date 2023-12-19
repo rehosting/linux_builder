@@ -55,11 +55,5 @@ jobs:
         with:
           files: kernels-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.ref }}
-
-      #- name: Publish release
-      #  uses: StuYarrow/publish-release@v1.1.2
-      #  env:
-      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #  with:
-      #    id: ${{ steps.create_release.outputs.id }}
+          tag_name: ${{ steps.create_release.outputs.id }}
+          #tag_name: ${{ github.sha }}
