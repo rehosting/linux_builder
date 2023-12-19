@@ -1,10 +1,11 @@
 name: Compile and release
 
-on:
-  push
+on: [push]
 
 jobs:
-  build:
+  build_and_publish:
+    # Only run on tags. run git tag vX and git push origin vX
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: panda-arc
 
     steps:
