@@ -1,8 +1,8 @@
 #!/bin/bash
 
-TARGETLIST="armel mipseb mipsel mips64eb mips64el"
+TARGETLIST="armel mipseb mipsel"
 
 set -eu
 
-docker build -t igloo_kernel_builder .
-docker run --rm -v $PWD:/app bash /app/build.sh $TARGETLIST
+docker build -t pandare/kernel_builder .
+docker run --rm -v $PWD:/app pandare/kernel_builder bash /app/build.sh $TARGETLIST
