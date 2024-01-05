@@ -6,6 +6,7 @@ set -eux
 # while our configs are at config.[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
+TARGET_LIST=${1:-"armel mipsel mipseb mips64eb"}
 mkdir -p /kernels
 
 get_cc() {
@@ -27,7 +28,6 @@ get_cc() {
     echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
 
-TARGET_LIST="armel mipsel mipseb mips64eb"
 for TARGET in $TARGET_LIST; do
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
