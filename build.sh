@@ -6,57 +6,59 @@ set -eux
 # while our configs are at config.[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
-mkdir /kernels
+mkdir -p /kernels
 
-TARGET_LIST="armel mipsel mipseb"
-for TARGET in $TARGET_LIST; do
-	BUILD_TARGETS="vmlinux"
-    if [ $TARGET == "armel" ]; then
-        export ARCH=arm
-        export CROSS_COMPILE=/opt/cross/arm-linux-musleabi/bin/arm-linux-musleabi-
-		BUILD_TARGETS="vmlinux zImage"
-    elif [ $TARGET == "armeb" ]; then
-		export CFLAGS="-mbig-endian"
-		export KCFLAGS="-mbig-endian"
-		export ARCH=arm
-		export CROSS_COMPILE=/opt/cross/arm-linux-musleabi/bin/arm-linux-musleabi-
-		BUILD_TARGETS="vmlinux zImage"
-    elif [ $TARGET == "mipsel" ]; then
-        export ARCH=mips
-		export CROSS_COMPILE=/opt/cross/mipsel-linux-musl/bin/mipsel-linux-musl-
-    elif [ $TARGET == "mipseb" ]; then
-        export ARCH=mips
-		export CROSS_COMPILE=/opt/cross/mipseb-linux-musl/bin/mipseb-linux-musl-
-	else
-		echo "Unknown target $TARGET"
-		exit 1
+get_cc() {
+    local arch=$1
+    local abi=""
+
+    # Clear CFLAGS and KCFLAGS if they are set
+    unset CFLAGS
+    unset KCFLAGS
+
+    if [[ $arch == *"arm"* ]]; then
+        abi="eabi"
+        if [[ $arch == *"eb"* ]]; then
+            export CFLAGS="-mbig-endian"
+            export KCFLAGS="-mbig-endian"
+        fi
+        arch="arm"
     fi
+    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+}
+
+TARGET_LIST="armel mipsel mipseb mips64eb"
+for TARGET in $TARGET_LIST; do
+    BUILD_TARGETS="vmlinux"
+    if [ $TARGET == "armel" ]; then
+        BUILD_TARGETS="vmlinux zImage"
+    fi
+
+    # Set short_arch based on TARGET
+    short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
+    if [ "$short_arch" == "mips64" ]; then
+        short_arch="mips"
+    fi
+
     echo "Building $BUILD_TARGETS for $TARGET"
 
-	if [ ! -f "/app/config.${TARGET}" ]; then
-		echo "No config for $TARGET"
-		exit 1
-	fi
-	mkdir -p "/tmp/build/${TARGET}"
+    if [ ! -f "/app/config.${TARGET}" ]; then
+        echo "No config for $TARGET"
+        exit 1
+    fi
+    mkdir -p "/tmp/build/${TARGET}"
     cp "/app/config.${TARGET}" "/tmp/build/${TARGET}/.config"
 
- 	# Actually build
-	echo "Building kernel for $TARGET"
-	make -C /app/linux O=/tmp/build/${TARGET}/ olddefconfig #>> /app/build.log
-	make -C /app/linux O=/tmp/build/${TARGET}/ $BUILD_TARGETS -j$(nproc) #>> /app/build.log
+    # Actually build
+    echo "Building kernel for $TARGET"
+    make -C /app/linux ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${TARGET}/ olddefconfig
+    make -C /app/linux ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
-	# On error cat the log
-	if [ $? -ne 0 ]; then
-		echo "ERROR BUILDING KERNEL"
-		tail -n30 /app/build.log
-		exit 1
-	fi
-
-	# Copy out zImage (if present) and vmlinux (always)
-	if [ -f "/tmp/build/${TARGET}/arch/${ARCH}/boot/zImage" ]; then
-		cp "/tmp/build/${TARGET}/arch/${ARCH}/boot/zImage" /kernels/zImage.${TARGET}
-	fi
-	cp /tmp/build/${TARGET}/vmlinux /kernels/vmlinux.${TARGET}
+    # Copy out zImage (if present) and vmlinux (always)
+    if [ -f "/tmp/build/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
+        cp "/tmp/build/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/zImage.${TARGET}
+    fi
+    cp "/tmp/build/${TARGET}/vmlinux" /kernels/vmlinux.${TARGET}
 
 	# Generate OSI profile
 	echo "[${TARGET}]" >> /kernels/osi.config
@@ -66,8 +68,8 @@ for TARGET in $TARGET_LIST; do
 
     /dwarf2json/dwarf2json linux --elf /kernels/vmlinux.${TARGET} \
 		| xz - > /kernels/vmlinux.${TARGET}.json.xz
+
 done
 
 echo "Built by linux_builder on $(date)" > /kernels/README.txt
-
 tar cvfz /app/kernels-latest.tar.gz /kernels
