@@ -1,6 +1,9 @@
 name: Compile and release
 
-on: [push]
+on:
+  push:
+    tags:
+      - '*'
 
 jobs:
   build:

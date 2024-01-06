@@ -3,17 +3,32 @@ name: Check that the code compiles
 on:
   pull_request:
     branches:
-      - fd4.10
-      - 4.10_hc
+      - main
 
 jobs:
   build:
     runs-on: panda-arc
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Install git
+        run: sudo apt-get -qq update -y && sudo apt-get -qq install git -y
 
-      - name: Build 
-        run: |
-          bash docker_build.sh
+      - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE. NOTE: this requires git > 2.18 (not on ubuntu 18.04 by default) to get .git directory and submodules
+        with:
+          fetch-depth: 0
+          #submodules: 'true'
+
+      # Instead of getting submodules with checkout, we can do it manually to control depth.
+      # We don't want a full Linux history
+      - name: Pull kernel source
+        run: git submodule update --init --depth 1
+
+      - name: Build Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: pandare/kernel_builder:latest
+
+      - name: Build Kernel
+        run: docker run --rm -v $PWD:/app pandare/kernel_builder /app/_in_container_build.sh
