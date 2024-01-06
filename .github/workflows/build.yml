@@ -9,6 +9,8 @@ jobs:
   build:
     # Only publish on tags. run git tag vX and git push origin vX
     runs-on: panda-arc
+    permissions:
+      contents: write
 
     steps:
       - name: Install git
