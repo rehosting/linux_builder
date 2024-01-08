@@ -66,7 +66,9 @@ for TARGET in $TARGET_LIST; do
         exit 1
     fi
     mkdir -p "/tmp/build/${TARGET}"
-    cp "/app/config.${TARGET}" "/tmp/build/${TARGET}/.config"
+
+    # Expand config to repalce #includes
+    python3 /app/config_mgmt/expand.py "/app/config.${TARGET}" "/tmp/build/${TARGET}/.config"
 
     # Actually build
     echo "Building kernel for $TARGET"
@@ -101,4 +103,6 @@ done
 if ! $CONFIGONLY; then
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar cvfz /app/kernels-latest.tar.gz /kernels
+else
+  /app/config_mgmt/make_all_common.sh
 fi
