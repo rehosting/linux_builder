@@ -42,9 +42,14 @@ The CI jobs will then build your release and make it available at `https://githu
 If you'd like to add a given option or set of options to all configs, you can do something like:
 
 ```sh
-# write your configs into delta.txt
-for f in $(cat delta.txt); do for t in $(ls config.*); do  echo $f>>$t; done; done
+# Write your config options into delta.txt
+
+# Apply delta
+for cfg in config.*; do cat delta.txt >> $cfg; done
+
 # Run linter as shown below
+
+# Commit changes
 git commit -a
 ```
 
