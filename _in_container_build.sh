@@ -93,8 +93,8 @@ for TARGET in $TARGET_LIST; do
         /kernels/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/osi.config
 
-        /dwarf2json/dwarf2json linux --elf /kernels/vmlinux.${TARGET} \
-        | xz - > /kernels/vmlinux.${TARGET}.json.xz
+        #/bin/dwarf2json linux --elf /kernels/vmlinux.${TARGET} \
+        #| xz - > /kernels/vmlinux.${TARGET}.json.xz
     fi
 done
 
