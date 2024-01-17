@@ -1,25 +1,58 @@
 #!/bin/bash
 
-# USAGE ./build.sh [configonly] [targetlist]
-# configonly: optional string, if passed as first argument, we'll only
-# update the defconfigs instead of building the kernel.
-# If no targets are listed, we'll build for all
-
-# Example: ./build.sh configonly armel mipseb mipsel mips64eb
-#          ./build.sh armel
-#          ./build.sh
-
-# Is first argument present and configonly?
-CONFIGONLY=""
-if [ $# -gt 0 ] && [ "$1" == "configonly" ]; then
-    CONFIGONLY="$1"
-    shift
-fi
-
-# Now consume target list or use default
-TARGETLIST=${1:-"armel mipseb mipsel mips64eb"}
-
 set -eu
 
+help() {
+    cat >&2 <<EOF
+USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGETS]
+
+	--config-only
+		Only update the defconfigs instead of building the kernel
+	--versions VERSIONS
+		Build only the specified kernel versions. By default, all versions are built.
+	--targets TARGETS
+		Build only for the specified targets. By default, TARGETS is "armel mipseb mipsel mips64eb".
+
+EXAMPLES
+	./build.sh --config-only --versions 4.10 --targets "armel mipseb mipsel mips64eb"
+	./build.sh --versions 4.10
+	./build.sh --targets armel
+	./build.sh
+EOF
+}
+
+# Default options
+CONFIG_ONLY=false
+VERSIONS=4.10
+TARGETS="armel mipseb mipsel mips64eb"
+
+# Parse command-line arguments
+for arg in "$@"; do
+    case "$1" in
+        --help)
+            help
+            exit
+            ;;
+        --config-only)
+            CONFIG_ONLY=true
+            shift # past argument
+            ;;
+        --versions)
+            VERSIONS="$2"
+            shift # past argument
+            shift # past value
+            ;;
+        --targets)
+            TARGETS="$2"
+            shift # past argument
+            shift # past value
+            ;;
+        *)
+            help
+            exit 1
+            ;;
+    esac
+done
+
 docker build -t pandare/kernel_builder .
-docker run --rm -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh $CONFIGONLY $TARGETLIST
+docker run --rm -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
