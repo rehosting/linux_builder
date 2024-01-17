@@ -26,15 +26,8 @@ jobs:
       - name: Pull kernel source
         run: git submodule update --init --depth 1
 
-      - name: Build Container
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          load: true
-          tags: pandare/kernel_builder:latest
-
       - name: Build Kernel
-        run: docker run --rm -v $PWD:/app pandare/kernel_builder /app/_in_container_build.sh
+        run: ./build.sh
 
       - name: Save package
         uses: actions/upload-artifact@v3
