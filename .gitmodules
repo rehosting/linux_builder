@@ -1,4 +1,4 @@
-[submodule "linux"]
-	path = linux
+[submodule "linux_4.10"]
+	path = linux/4.10
 	url = https://github.com/panda-re/linux.git
 	branch = 4.10_min
