@@ -49,4 +49,4 @@ git commit -a
 ```
 
 ## Linting configs
-Before commiting any config update you MUST lint your change by running `./build.sh configonly`. You can specify architectures to lint by listing them as additional arguments, e.g., `./build.sh configonly armel mipel`.
+Before commiting any config update you MUST lint your change by running `./build.sh --config-only`. You can specify architectures to lint with the `--targets` flag, e.g., `./build.sh --config-only --targets "armel mipel"`.
