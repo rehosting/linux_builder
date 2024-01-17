@@ -27,7 +27,7 @@ VERSIONS=4.10
 TARGETS="armeb armel mipseb mipsel mips64eb mips64el"
 
 # Parse command-line arguments
-for arg in "$@"; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --help)
             help
