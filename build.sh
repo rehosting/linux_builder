@@ -11,7 +11,7 @@ USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGE
 	--versions VERSIONS
 		Build only the specified kernel versions. By default, all versions are built.
 	--targets TARGETS
-		Build only for the specified targets. By default, TARGETS is "armeb armel mipseb mipsel mips64eb mips64el".
+		Build only for the specified targets. By default, all targets are built.
 
 EXAMPLES
 	./build.sh --config-only --versions 4.10 --targets "armel mipseb mipsel mips64eb"
