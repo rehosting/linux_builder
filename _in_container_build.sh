@@ -55,29 +55,29 @@ for TARGET in $TARGETS; do
         echo "No config for $TARGET"
         exit 1
     fi
-    mkdir -p "/tmp/build/${TARGET}"
-    cp "/app/config.${TARGET}" "/tmp/build/${TARGET}/.config"
+    mkdir -p "/tmp/build/${VERSION}/${TARGET}"
+    cp "/app/config.${TARGET}" "/tmp/build/${VERSION}/${TARGET}/.config"
 
     # Actually build
     echo "Building kernel for $TARGET"
-    make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${TARGET}/ olddefconfig
+    make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
 
     # If updating configs, lint them with kernel first! This sorts, removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Updating $TARGET config in place"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${TARGET}/ savedefconfig
-      cp /tmp/build/${TARGET}/defconfig /app/config.${TARGET}
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      cp /tmp/build/${VERSION}/${TARGET}/defconfig /app/config.${TARGET}
       echo "Finished update for config.${TARGET}"
     else
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 
       # Copy out zImage (if present) and vmlinux (always)
-      if [ -f "/tmp/build/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
-          cp "/tmp/build/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
+      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
+          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
       fi
-      cp "/tmp/build/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
+      cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
 
       # Generate OSI profile
       echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
