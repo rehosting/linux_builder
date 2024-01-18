@@ -14,7 +14,7 @@ USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGE
 		Build only for the specified targets. By default, all targets are built.
 
 EXAMPLES
-	./build.sh --config-only --versions 4.10 --targets "armel mipseb mipsel mips64eb"
+	./build.sh --config-only --versions "4.10 6.7" --targets "armel mipseb mipsel mips64eb"
 	./build.sh --versions 4.10
 	./build.sh --targets armel
 	./build.sh
@@ -23,7 +23,7 @@ EOF
 
 # Default options
 CONFIG_ONLY=false
-VERSIONS=4.10
+VERSIONS="4.10 6.7"
 TARGETS="armeb armel mipseb mipsel mips64eb mips64el"
 
 # Parse command-line arguments

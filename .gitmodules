@@ -2,3 +2,7 @@
 	path = linux/4.10
 	url = https://github.com/panda-re/linux.git
 	branch = 4.10_min
+[submodule "linux_6.7"]
+	path = linux/6.7
+	url = https://github.com/panda-re/linux.git
+	branch = 6.7_min
