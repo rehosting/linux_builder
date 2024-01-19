@@ -1,0 +1,4 @@
+#include "mips64-common.inc"
+
+CONFIG_CGROUP_HUGETLB=y
+CONFIG_CPU_LITTLE_ENDIAN=y

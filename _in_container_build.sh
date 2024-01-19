@@ -3,7 +3,7 @@
 set -eu
 
 # We want to build linux for each of our targets and versions using the config files. Linux is in /app/linux/[version]
-# while our configs are at config.[arch]. We need to set the ARCH and CROSS_COMPILE variables
+# while our configs are at configs/[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
 # Get options from build.sh
@@ -51,24 +51,22 @@ for TARGET in $TARGETS; do
 
     echo "Building $BUILD_TARGETS for $TARGET"
 
-    if [ ! -f "/app/config.${TARGET}" ]; then
+    if [ ! -f "/app/configs/${TARGET}" ]; then
         echo "No config for $TARGET"
         exit 1
     fi
     mkdir -p "/tmp/build/${VERSION}/${TARGET}"
-    cp "/app/config.${TARGET}" "/tmp/build/${VERSION}/${TARGET}/.config"
+    cpp -P -undef "/app/configs/${TARGET}" -o "/tmp/build/${VERSION}/${TARGET}/.config"
 
     # Actually build
     echo "Building kernel for $TARGET"
-    make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
 
-    # If updating configs, lint them with kernel first! This sorts, removes default options and duplicates.
+    # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
-      echo "Updating $TARGET config in place"
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
-      cp /tmp/build/${VERSION}/${TARGET}/defconfig /app/config.${TARGET}
-      echo "Finished update for config.${TARGET}"
+      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION

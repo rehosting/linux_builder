@@ -39,19 +39,7 @@ git push origin v3.1
 The CI jobs will then build your release and make it available at `https://github.com/panda-re/linux_builder/releases/download/<TAG-NAME>/kernels-latest.tar.gz`
 
 ## Modifying configs
-If you'd like to add a given option or set of options to all configs, you can do something like:
-
-```sh
-# Write your config options into delta.txt
-
-# Apply delta
-for cfg in config.*; do cat delta.txt >> $cfg; done
-
-# Run linter as shown below
-
-# Commit changes
-git commit -a
-```
+If you'd like to add a given option or set of options to all configs, you can add it to [configs/all-common.inc](configs/all-common.inc).
 
 ## Linting configs
-Before commiting any config update you MUST lint your change by running `./build.sh --config-only`. You can specify architectures to lint with the `--targets` flag, e.g., `./build.sh --config-only --targets "armel mipel"`.
+Before commiting any config update you MUST lint your change by running `./build.sh --config-only`. You can specify architectures to lint with the `--targets` flag, e.g., `./build.sh --config-only --targets "armel mipel"`. If the lint fails, build.sh will exit with non-zero status and print a diff containing the problems.

@@ -1,0 +1,4 @@
+#include "arm-common.inc"
+
+CONFIG_ARCH_VEXPRESS=y
+CONFIG_CPU_BIG_ENDIAN=y
