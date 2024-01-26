@@ -3,7 +3,7 @@
 set -eu
 
 # We want to build linux for each of our targets and versions using the config files. Linux is in /app/linux/[version]
-# while our configs are at configs/[arch]. We need to set the ARCH and CROSS_COMPILE variables
+# while our configs are at configs/[version]/[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
 # Get options from build.sh
@@ -51,12 +51,12 @@ for TARGET in $TARGETS; do
 
     echo "Building $BUILD_TARGETS for $TARGET"
 
-    if [ ! -f "/app/configs/${TARGET}" ]; then
+    if [ ! -f "/app/configs/${VERSION}/${TARGET}" ]; then
         echo "No config for $TARGET"
         exit 1
     fi
     mkdir -p "/tmp/build/${VERSION}/${TARGET}"
-    cpp -P -undef "/app/configs/${TARGET}" -o "/tmp/build/${VERSION}/${TARGET}/.config"
+    cpp -P -undef "/app/configs/${VERSION}/${TARGET}" -o "/tmp/build/${VERSION}/${TARGET}/.config"
 
     # Actually build
     echo "Building kernel for $TARGET"
