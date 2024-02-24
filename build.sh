@@ -23,7 +23,8 @@ EOF
 
 # Default options
 CONFIG_ONLY=false
-VERSIONS="4.10 6.7"
+#VERSIONS="4.10 6.7"
+VERSIONS="4.10"
 TARGETS="armeb armel mipseb mipsel mips64eb mips64el"
 
 # Parse command-line arguments
