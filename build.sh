@@ -56,4 +56,5 @@ while [[ $# -gt 0 ]]; do
 done
 
 docker build -t pandare/kernel_builder .
-docker run --rm -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
+mkdir -p cache
+docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
