@@ -1,5 +1,6 @@
 #include "all-common.inc"
 
+CONFIG_OABI_COMPAT=y
 CONFIG_8139CP=y
 CONFIG_8139TOO=y
 CONFIG_ATA_GENERIC=y
