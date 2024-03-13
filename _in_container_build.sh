@@ -76,15 +76,17 @@ for TARGET in $TARGETS; do
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
       fi
-      # strip vmlinux
+      
       cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
-      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
 
       # Generate OSI profile
       echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
       /panda/panda/plugins/osi_linux/utils/kernelinfo_gdb/run.sh \
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
+      
+      # strip vmlinux     
+      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
