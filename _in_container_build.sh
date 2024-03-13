@@ -76,7 +76,9 @@ for TARGET in $TARGETS; do
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
       fi
+      # strip vmlinux
       cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
+      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
 
       # Generate OSI profile
       echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
