@@ -15,6 +15,7 @@ jobs:
     strategy:
       matrix:
         target: [armel, mipsel, mipseb]
+        version: [4.10]
 
     steps:
       - name: Install git
@@ -31,13 +32,13 @@ jobs:
         run: git submodule update --init --depth 1
 
       - name: Build Kernel for ${{ matrix.target }}
-        run: ./build.sh --targets ${{ matrix.target }}
+        run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
 
       # Temporarily store each target's build output
-      - name: Save ${{ matrix.target }} build
-        uses: actions/upload-artifact@v3
+      - name: Save ${{ matrix.target }} ${{ matrix.version }} build output
+        uses: actions/upload-artifact@v4
         with:
-          name: build-output-${{ matrix.target }}
+          name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: kernels-latest.tar.gz
 
   aggregate:
@@ -45,14 +46,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+      contents: write
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: downloaded-kernels
-
-      - name: debug
-        run: find downloaded-kernels
 
       - name: Combine all kernels into a single archive
         run: |
@@ -61,29 +60,25 @@ jobs:
           for archive in $(find downloaded-kernels -name "*.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
           done
+
+          # Combine OSI profiles for each kernel version
+          # otherwise the extracted kernel configs willc lobber each other
+          if [ -d kernels/4.10 ] ; then
+            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+              tar -O -xf "$archive" "kernels/4.10/osi.config";
+            done > kernels/4.10/osi.config
+          fi
+
+          if [ -d kernels/6.7 ] ; then
+            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+              tar -O -xf "$archive" "kernels/6.7/osi.config";
+            done > kernels/6.7/osi.config
+          fi
+
+
+
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
-
-      - name: Upload the final archive
-        uses: actions/upload-artifact@v3
-        with:
-          name: kernels-latest.tar.gz
-          path: kernels-latest.tar.gz
-
-  release:
-    needs: aggregate
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      actions: read
-
-    steps:
-      - name: Download the final kernels archive
-        uses: actions/download-artifact@v3
-        with:
-          name: kernels-latest.tar.gz
 
       - name: Create and publish release
         uses: softprops/action-gh-release@v1
