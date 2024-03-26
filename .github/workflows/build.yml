@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     # Only publish on tags. run git tag vX and git push origin vX
-    runs-on: panda-arc
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
