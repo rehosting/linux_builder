@@ -51,7 +51,7 @@ jobs:
         with:
           path: downloaded-kernels
 
-      -name: debug
+      - name: debug
         run: find downloaded-kernels
 
       - name: Combine all kernels into a single archive
