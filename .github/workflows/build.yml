@@ -10,13 +10,17 @@ jobs:
     # Only publish on tags. run git tag vX and git push origin vX
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      actions: write
+
+    strategy:
+      matrix:
+        target: [armel, mipsel, mipseb]
 
     steps:
       - name: Install git
         run: sudo apt-get -qq update -y && sudo apt-get -qq install git -y
 
-      - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE. NOTE: this requires git > 2.18 (not on ubuntu 18.04 by default) to get .git directory and submodules
+      - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
         with:
           fetch-depth: 0
           #submodules: 'true'
@@ -26,31 +30,53 @@ jobs:
       - name: Pull kernel source
         run: git submodule update --init --depth 1
 
-      - name: Build Kernel
-        run: ./build.sh
+      - name: Build Kernel for ${{ matrix.target }}
+        run: ./build.sh --targets ${{ matrix.target }}
 
-      - name: Save package
+      # Temporarily store each target's build output
+      - name: Save ${{ matrix.target }} build
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-output-${{ matrix.target }}
+          path: /kernels
+
+  aggregate:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: downloaded-kernels
+
+      - name: Package all kernels into a single archive
+        run: |
+          tar -czvf kernels-latest.tar.gz -C downloaded-kernels .
+
+      - name: Upload the final archive
         uses: actions/upload-artifact@v3
         with:
           name: kernels-latest.tar.gz
           path: kernels-latest.tar.gz
 
-      - name: Create release
-        if: startsWith(github.ref, 'refs/tags/v')
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: release_${{ github.sha }}
-          release_name: Release ${{ github.ref }}
-          body: |
-            Release @${{ github.ref }}
-          draft: true
-          prerelease: false
+  release:
+    needs: aggregate
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
 
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download the final kernels archive
+        uses: actions/download-artifact@v3
+        with:
+          name: kernels-latest.tar.gz
+
+      - name: Create and publish release
         uses: softprops/action-gh-release@v1
         with:
           files: kernels-latest.tar.gz
