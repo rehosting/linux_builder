@@ -38,7 +38,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: build-output-${{ matrix.target }}
-          path: /kernels
+          path: kernels-latest.tar.gz
 
   aggregate:
     needs: build
@@ -51,9 +51,18 @@ jobs:
         with:
           path: downloaded-kernels
 
-      - name: Package all kernels into a single archive
+      -name: debug
+        run: find downloaded-kernels
+
+      - name: Combine all kernels into a single archive
         run: |
-          tar -czvf kernels-latest.tar.gz -C downloaded-kernels .
+          mkdir combined-kernels
+          # Extract each kernels-latest.tar.gz archive
+          for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+            tar -xzf "$archive" -C combined-kernels
+          done
+          # Create a new single archive from the combined content
+          tar -czvf kernels-latest.tar.gz -C combined-kernels .
 
       - name: Upload the final archive
         uses: actions/upload-artifact@v3
