@@ -95,3 +95,6 @@ if ! $CONFIG_ONLY; then
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar cvfz /app/kernels-latest.tar.gz /kernels
 fi
+
+# Ensure cache can be read/written by host
+chmod -r o+rw /tmp/build
