@@ -66,13 +66,13 @@ jobs:
           if [ -d kernels/4.10 ] ; then
             for archive in $(find downloaded-kernels -name "*.tar.gz"); do
               tar -O -xf "$archive" "kernels/4.10/osi.config";
-            done > kernels/4.10/osi.config
+            done > combined-kernels/kernels/4.10/osi.config
           fi
 
           if [ -d kernels/6.7 ] ; then
             for archive in $(find downloaded-kernels -name "*.tar.gz"); do
               tar -O -xf "$archive" "kernels/6.7/osi.config";
-            done > kernels/6.7/osi.config
+            done > combined-kernels/kernels/6.7/osi.config
           fi
 
 
