@@ -31,6 +31,17 @@ jobs:
       - name: Pull kernel source
         run: git submodule update --init --depth 1
 
+      - name: Cache kernel build objects
+        uses: actions/cache@v2
+        with:
+          path: |
+            cache
+          key: ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-${{ matrix.target }}-${{ hashFiles('**/Dockerfile', '**/*.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-${{ matrix.target }}-
+            ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-
+            ${{ runner.os }}-kernel-build-
+
       - name: Build Kernel for ${{ matrix.target }}
         run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
 
