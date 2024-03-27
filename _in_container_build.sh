@@ -97,4 +97,4 @@ if ! $CONFIG_ONLY; then
 fi
 
 # Ensure cache can be read/written by host
-chmod -r o+rw /tmp/build
+chmod -R o+rw /tmp/build
