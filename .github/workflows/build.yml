@@ -9,8 +9,6 @@ jobs:
   build:
     # Only publish on tags. run git tag vX and git push origin vX
     runs-on: self-hosted
-    permissions:
-      actions: write
 
     strategy:
       matrix:
