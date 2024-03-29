@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     # Only publish on tags. run git tag vX and git push origin vX
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       actions: write
 
@@ -54,7 +54,7 @@ jobs:
 
   aggregate:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       actions: write
       contents: write
