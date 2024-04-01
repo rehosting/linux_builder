@@ -87,11 +87,6 @@ for TARGET in $TARGETS; do
       
       # strip vmlinux     
       $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
-
-      # Strip zImage
-      if [ -f /kernels/$VERSION/zImage.${TARGET} ]; then
-        $(get_cc $TARGET)strip /kernels/$VERSION/zImage.${TARGET}
-      fi
     fi
 done
 done
