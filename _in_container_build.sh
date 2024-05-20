@@ -25,7 +25,10 @@ get_cc() {
     unset CFLAGS
     unset KCFLAGS
 
-    if [[ $arch == *"arm"* ]]; then
+    if [[ $arch == *"arm64"* ]]; then
+        abi=""
+        arch="aarch64"
+    elif [[ $arch == *"arm"* ]]; then
         abi="eabi"
         if [[ $arch == *"eb"* ]]; then
             export CFLAGS="-mbig-endian"

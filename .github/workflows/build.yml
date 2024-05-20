@@ -12,11 +12,12 @@ on:
 jobs:
   build:
     # Only publish on tags. run git tag vX and git push origin vX
-    runs-on: self-hosted
+    # runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        target: [armel, mipsel, mipseb, mips64eb]
+        target: [armel, arm64, mipsel, mipseb, mips64eb]
         version: ["4.10"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
