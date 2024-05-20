@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: chown cache
-        run: chown -R $UID:UID /github/home/.cache
+        run: chown -R $UID /github/home/.cache
 
       - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
         with:
