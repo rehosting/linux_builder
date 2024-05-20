@@ -27,7 +27,7 @@ get_cc() {
 
     if [[ $arch == *"arm64"* ]]; then
         abi=""
-        arch="arch64"
+        arch="aarch64"
     elif [[ $arch == *"arm"* ]]; then
         abi="eabi"
         if [[ $arch == *"eb"* ]]; then
