@@ -20,6 +20,9 @@ jobs:
         version: ["4.10"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
+      - name: chown cache
+        run: chown -R $UID:UID /github/home/.cache
+
       - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
         with:
           fetch-depth: 0
