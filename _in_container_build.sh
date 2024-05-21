@@ -44,6 +44,8 @@ for TARGET in $TARGETS; do
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
         BUILD_TARGETS="vmlinux zImage"
+    elif [ $TARGET == "arm64" ]; then
+        BUILD_TARGETS="vmlinux Image.gz"
     fi
 
     # Set short_arch based on TARGET
@@ -78,6 +80,11 @@ for TARGET in $TARGETS; do
       # Copy out zImage (if present) and vmlinux (always)
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
+      fi
+      
+      # Copy out Image.gz (if present) 
+      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" ]; then
+          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" /kernels/$VERSION/zImage.${TARGET}
       fi
       
       cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
