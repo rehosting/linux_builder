@@ -55,7 +55,7 @@ jobs:
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: write
@@ -67,7 +67,7 @@ jobs:
 
       - name: Combine all kernels into a single archive
         run: |
-          mkdir combined-kernels
+          rm -rf combined-kernels && mkdir combined-kernels
           # Extract each kernels-latest.tar.gz archive
           for archive in $(find downloaded-kernels -name "*.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
