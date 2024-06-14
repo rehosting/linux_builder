@@ -76,7 +76,7 @@ for TARGET in $TARGETS; do
         # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
         yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
         echo "Disabling warnings for old kernel"
-        CFLAGS="-w"
+        CFLAGS="-w -fno-pie"
       else
         make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
         CFLAGS=""
