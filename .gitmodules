@@ -6,3 +6,7 @@
 	path = linux/6.7
 	url = https://github.com/rehosting/linux.git
 	branch = main_6.7
+[submodule "linux/2.6"]
+	path = linux/2.6
+	url = git@github.com:rehosting/linux.git
+	branch = 2.6-port
