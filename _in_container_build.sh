@@ -74,11 +74,14 @@ for TARGET in $TARGETS; do
       echo "Building kernel for $TARGET"
       if [ $VERSION == "2.6" ]; then
         # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
-        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig
+        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
+        echo "Disabling warnings for old kernel"
+        CFLAGS="-w"
       else
-        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+        CFLAGS=""
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
 
       mkdir -p /kernels/$VERSION
 
