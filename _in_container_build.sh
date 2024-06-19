@@ -19,25 +19,39 @@ echo "Targets: $TARGETS"
 
 get_cc() {
     local arch=$1
+    local version=$2
     local abi=""
 
     # Clear CFLAGS and KCFLAGS if they are set
     unset CFLAGS
     unset KCFLAGS
 
-    if [[ $arch == *"arm64"* ]]; then
-        abi=""
-        arch="aarch64"
-    elif [[ $arch == *"arm"* ]]; then
-        abi="eabi"
-        if [[ $arch == *"eb"* ]]; then
-            export CFLAGS="-mbig-endian"
-            export KCFLAGS="-mbig-endian"
+    if [[ $version == "4.10" ]] || [[ $version == "6.7" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            abi=""
+            arch="aarch64"
+        elif [[ $arch == *"arm"* ]]; then
+            abi="eabi"
+            if [[ $arch == *"eb"* ]]; then
+                export CFLAGS="-mbig-endian"
+                export KCFLAGS="-mbig-endian"
+            fi
+            arch="arm"
         fi
-        arch="arm"
+        echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+    elif [[ $version == "2.6" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            echo "aarch64-linux-gnu-"
+        elif [[ $arch == *"arm"* ]]; then
+            echo "arm-linux-gnueabi-"
+        else
+            echo "gcc-4.9" #probably not this
+        fi
+    else
+        echo "Unsupported version"
     fi
-    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
+
 
 for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
@@ -67,21 +81,21 @@ for TARGET in $TARGETS; do
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
       #diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
     else
       echo "Building kernel for $TARGET"
       if [ $VERSION == "2.6" ]; then
         # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
-        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
+        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
         echo "Disabling warnings for old kernel"
         CFLAGS="-w -fno-pie"
       else
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
         CFLAGS=""
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
 
       mkdir -p /kernels/$VERSION
 
@@ -104,7 +118,7 @@ for TARGET in $TARGETS; do
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       
       # strip vmlinux     
-      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+      $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
