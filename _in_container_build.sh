@@ -117,8 +117,8 @@ for TARGET in $TARGETS; do
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       
-      # strip vmlinux     
-      $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
+      # Do not strip vmlinux
+      # $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
