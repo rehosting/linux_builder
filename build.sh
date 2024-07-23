@@ -25,7 +25,7 @@ EOF
 CONFIG_ONLY=false
 #VERSIONS="4.10 6.7"
 VERSIONS="4.10"
-TARGETS="armeb armel arm64 mipseb mipsel mips64eb mips64el"
+TARGETS="armeb armel arm64 mipseb mipsel mips64eb mips64el x86_64"
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
