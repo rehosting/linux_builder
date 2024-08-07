@@ -1,1 +1,3 @@
 #include "x86-common.inc"
+
+CONFIG_SMP=y
