@@ -34,18 +34,22 @@ while [[ $# -gt 0 ]]; do
             help
             exit
             ;;
+        --clear-cache)
+            docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder /bin/bash -c "rm -r /tmp/build/*"
+            exit
+            ;;
         --config-only)
             CONFIG_ONLY=true
-            shift # past argument
+            shift # past flag
             ;;
         --versions)
             VERSIONS="$2"
-            shift # past argument
+            shift # past flag
             shift # past value
             ;;
         --targets)
             TARGETS="$2"
-            shift # past argument
+            shift # past flag
             shift # past value
             ;;
         *)
