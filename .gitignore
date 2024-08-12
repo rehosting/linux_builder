@@ -3,3 +3,4 @@
 *.log
 *.linted
 cache/
+kernels/
