@@ -72,7 +72,21 @@ for TARGET in $TARGETS; do
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      if [ "$VERSION" == "2.6" ]; then
+          # No support for olddefconfig, need to use yes + oldconfig
+          yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
+          CFLAGS=""
+      elif [ "$VERSION" ==  "4.10" ]; then
+          # For versions before 6.7, use olddefconfig
+          make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+          CFLAGS=""
+      else
+          # For version 6.7 and later, use KCONFIG_ALLCONFIG with /dev/null
+          make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ KCONFIG_ALLCONFIG=/dev/null oldconfig
+          CFLAGS=""
+      fi
+
+
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION
