@@ -86,6 +86,34 @@ for TARGET in $TARGETS; do
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
     else
       echo "Building kernel for $TARGET"
+      echo "CONFIG_AEABI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_OABI_COMPAT=n" >> /tmp/build/${VERSION}/${TARGET}/.config
+      # Add additional configuration options
+      echo "CONFIG_VIRTIO=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_BALLOON=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_BLK=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_NET=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI_HOST_GENERIC=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI_QUIRKS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_LOWLEVEL=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_DEVTMPFS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+
+      echo "CONFIG_VIRTIO_CONSOLE=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_LSI53C895A=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_SYM53C8XX_2=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT3_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT4_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT4_USE_FOR_EXT23=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "HI"
+      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "VIRT"
+      #tail /tmp/build/${VERSION}/${TARGET}/.config
+      wc -l /tmp/build/${VERSION}/${TARGET}/.config
       if [ $VERSION == "2.6" ]; then
         # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
         yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
