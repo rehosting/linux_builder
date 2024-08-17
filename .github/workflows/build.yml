@@ -42,6 +42,9 @@ jobs:
             ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-
             ${{ runner.os }}-kernel-build-
 
+      - name: Lint configs
+        run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }} --config-only
+
       - name: Build Kernel for ${{ matrix.target }}
         run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
 
