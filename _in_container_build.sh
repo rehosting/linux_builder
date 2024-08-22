@@ -39,6 +39,60 @@ get_cc() {
     echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
 
+get_all_options() {
+    local linux_dir="$1"
+    local arch="$2"
+    local temp_dir=$(mktemp -d)
+
+    # Generate allnoconfig
+    make -C "$linux_dir" ARCH=$arch O="$temp_dir" allnoconfig >/dev/null 2>&1
+
+    # Generate allmodconfig
+    make -C "$linux_dir" ARCH=$arch O="$temp_dir" allmodconfig >/dev/null 2>&1
+
+    # Extract all CONFIG_ lines, remove comments and empty lines
+    grep '^CONFIG_' "$temp_dir/.config" | sed 's/=.*$//' | sort -u
+
+    # Clean up
+    rm -rf "$temp_dir"
+}
+
+lint_config() {
+    local config_file="$1"
+    local defconfig_file="$2"
+    local arch="$3"
+    local linux_dir="$4"
+
+    # Get the list of all possible config options
+    all_options=$(get_all_options "$linux_dir" "$arch")
+
+
+    # Generate a full default config
+    make -C "$linux_dir" ARCH=$arch defconfig >/dev/null 2>&1
+    local full_defconfig="$linux_dir/.config"
+
+    # Compare the .config and defconfig files
+    diff -u <(sort "$config_file") <(sort "$defconfig_file" | sed '/^[ #]/d') | while read -r line; do
+        if [[ $line == -CONFIG_* ]]; then
+            option=${line#-}
+            option=${option%=y}  # Remove the '=y' suffix
+            if grep -q "^$option=" "$full_defconfig"; then
+                echo "ON BY DEFAULT for $arch: $option"
+            elif ! echo "$all_options" | grep -q "^$option$"; then
+                echo "INVALID OPTION: $option"
+            else
+                echo "MISSING DEPENDENCY: $option"
+            fi
+        fi
+    done | sort
+
+    echo $all_options > /app/all.txt
+
+
+    # Clean up
+    rm -f "$full_defconfig"
+}
+
 for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
     BUILD_TARGETS="vmlinux"
@@ -67,15 +121,22 @@ for TARGET in $TARGETS; do
 
 
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
+    build_dir="/tmp/build/${VERSION}/${TARGET}"
+    linux_dir="/app/linux/$VERSION"
+
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
-      cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
-      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
+
+      # Generate the .config and defconfig files
+      make -C "$linux_dir" ARCH="$short_arch" CROSS_COMPILE="$(get_cc $TARGET)" O="$build_dir" savedefconfig
+
+      # Perform the linting
+      lint_config "$build_dir/.config" "$build_dir/defconfig" "$short_arch" "$linux_dir" > "/app/config_${VERSION}_${TARGET}.linted"
+
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C $BUILD_DIR ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      make -C $BUILD_DIR ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 
