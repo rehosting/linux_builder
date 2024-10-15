@@ -19,25 +19,47 @@ echo "Targets: $TARGETS"
 
 get_cc() {
     local arch=$1
+    local version=$2
     local abi=""
 
     # Clear CFLAGS and KCFLAGS if they are set
     unset CFLAGS
     unset KCFLAGS
 
-    if [[ $arch == *"arm64"* ]]; then
-        abi=""
-        arch="aarch64"
-    elif [[ $arch == *"arm"* ]]; then
-        abi="eabi"
-        if [[ $arch == *"eb"* ]]; then
-            export CFLAGS="-mbig-endian"
-            export KCFLAGS="-mbig-endian"
+    if [[ $version == "4.10" ]] || [[ $version == "6.7" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            abi=""
+            arch="aarch64"
+        elif [[ $arch == *"arm"* ]]; then
+            abi="eabi"
+            if [[ $arch == *"eb"* ]]; then
+                export CFLAGS="-mbig-endian"
+                export KCFLAGS="-mbig-endian"
+            fi
+            arch="arm"
         fi
-        arch="arm"
+        echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+    elif [[ $version == "2.6" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            echo "aarch64-linux-gnu-"
+        elif [[ $arch == *"arm"* ]]; then
+            echo "arm-linux-gnueabi-"
+        else
+            echo "gcc-4.9" #probably not this
+        fi
+    elif [[ $version == "3.14" ]]; then
+	if [[ $arch == *"arm64"* ]]; then
+            echo "aarch64-linux-gnu-"
+        elif [[ $arch == *"arm"* ]]; then
+            echo "arm-linux-gnueabi-"
+        else
+            echo "gcc-4.9" #probably not this
+        fi
+    else
+        echo "Unsupported version"
     fi
-    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
+
 
 for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
@@ -46,8 +68,6 @@ for TARGET in $TARGETS; do
         BUILD_TARGETS="vmlinux zImage"
     elif [ $TARGET == "arm64" ]; then
         BUILD_TARGETS="vmlinux Image.gz"
-    elif [ $TARGET == "x86_64" ]; then
-        BUILD_TARGETS="vmlinux bzImage"
     fi
 
     # Set short_arch based on TARGET
@@ -69,23 +89,77 @@ for TARGET in $TARGETS; do
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      #diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
-      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      echo "CONFIG_AEABI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_OABI_COMPAT=n" >> /tmp/build/${VERSION}/${TARGET}/.config
+      # Add additional configuration options
+      echo "CONFIG_VIRTIO=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_BALLOON=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_BLK=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_NET=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI_HOST_GENERIC=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_PCI_QUIRKS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_LOWLEVEL=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_DEVTMPFS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+ 
+      echo "CONFIG_VIRTIO_CONSOLE=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_VIRTIO_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_LSI53C895A=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_SCSI_SYM53C8XX_2=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT2_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT3_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT4_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT4_USE_FOR_EXT23=y" >> /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_ATA=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_SATA=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_SCSI=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_SCSI_PROC_FS=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_BLK_DEV_SR=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_CHR_DEV_SG=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_SCSI_MULTI_LUN=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_DEVTMPFS=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      echo "CONFIG_DEVTMPFS_MOUNT=y" >> /tmp/build/${VERSION}/${TARGET}/config
+
+      echo "CONFIG_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      #echo "CONFIG_=y" >> /tmp/build/${VERSION}/${TARGET}/config
+
+      echo "HI"
+      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "VIRT"
+      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "ATA"
+      sed -i '/^CONFIG_EXT4_USE_FOR_EXT23=y/d' /tmp/build/${VERSION}/${TARGET}/.config
+      echo "CONFIG_EXT4_USE_FOR_EXT23=n" >> /tmp/build/${VERSION}/${TARGET}/config
+      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "EXT"
+      #tail /tmp/build/${VERSION}/${TARGET}/.config
+      wc -l /tmp/build/${VERSION}/${TARGET}/.config
+      if [ $VERSION == "2.6" ]; then
+        # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
+        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
+        CFLAGS=""
+      elif [ $VERSION == "3.14" ]; then
+        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ vexpress_defconfig >/dev/null
+        CFLAGS=""
+      else
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+        CFLAGS=""
+      fi
+      cp /tmp/build/${VERSION}/${TARGET}/.config /app/saveconfig.config
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
 
       mkdir -p /kernels/$VERSION
 
       # Copy out zImage (if present) and vmlinux (always)
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
-      fi
-
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" /kernels/$VERSION/bzImage.${TARGET}
       fi
       
       # Copy out Image.gz (if present) 
@@ -101,8 +175,8 @@ for TARGET in $TARGETS; do
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       
-      # strip vmlinux     
-      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+      # Do not strip vmlinux
+      # $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
