@@ -9,3 +9,4 @@
 [submodule "linux/3.14"]
 	path = linux/3.14
 	url = git@github.com:rehosting/linux.git
+	branch = main_3.14
