@@ -20,7 +20,20 @@ jobs:
     strategy:
       matrix:
         target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, x86_64]
-        version: ["4.10"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
+        version: ["4.10", "3.14"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
+        exclude:
+          - target: arm64
+            version: "3.14"
+          - target: mipsel
+            version: "3.14"
+          - target: mipseb
+            version: "3.14"
+          - target: mips64el
+            version: "3.14"
+          - target: mips64eb
+            version: "3.14"
+          - target: x86_64
+            version: "3.14"
 
     steps:
       - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
