@@ -23,9 +23,8 @@ EOF
 
 # Default options
 CONFIG_ONLY=false
-#VERSIONS="4.10 6.7"
-#VERSIONS="4.10"
-VERSIONS="3.14"
+#VERSIONS="3.14 4.10 6.7"
+VERSIONS="4.10"
 TARGETS="armeb armel arm64 mipseb mipsel mips64eb mips64el x86_64"
 
 # Parse command-line arguments
@@ -36,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             exit
             ;;
         --clear-cache)
-            docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app build3.11 /bin/bash -c "rm -r /tmp/build/*"
+            docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder /bin/bash -c "rm -r /tmp/build/*"
             exit
             ;;
         --config-only)
@@ -60,6 +59,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-docker build -t build3.11 .
+docker build -t pandare/kernel_builder .
 mkdir -p cache
-docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app build3.11 bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
+docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
