@@ -90,69 +90,14 @@ for TARGET in $TARGETS; do
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
-      #diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
+      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
-      echo "CONFIG_AEABI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_OABI_COMPAT=n" >> /tmp/build/${VERSION}/${TARGET}/.config
-      # Add additional configuration options
-      echo "CONFIG_VIRTIO=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_VIRTIO_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_VIRTIO_BALLOON=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_VIRTIO_BLK=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_VIRTIO_NET=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_PCI_HOST_GENERIC=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_PCI_QUIRKS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_SCSI=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_SCSI_LOWLEVEL=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_DEVTMPFS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
- 
-      echo "CONFIG_VIRTIO_CONSOLE=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_VIRTIO_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_SCSI_LSI53C895A=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_SCSI_SYM53C8XX_2=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_EXT2_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_EXT3_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_EXT4_FS=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_EXT4_USE_FOR_EXT23=y" >> /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_ATA=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_SATA=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_SCSI=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_SCSI_PROC_FS=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_BLK_DEV_SD=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_BLK_DEV_SR=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_CHR_DEV_SG=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_SCSI_MULTI_LUN=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_DEVTMPFS=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      echo "CONFIG_DEVTMPFS_MOUNT=y" >> /tmp/build/${VERSION}/${TARGET}/config
 
-      echo "CONFIG_PCI=y" >> /tmp/build/${VERSION}/${TARGET}/config
-      #echo "CONFIG_=y" >> /tmp/build/${VERSION}/${TARGET}/config
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      CFLAGS=""
 
-      echo "HI"
-      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "VIRT"
-      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "ATA"
-      sed -i '/^CONFIG_EXT4_USE_FOR_EXT23=y/d' /tmp/build/${VERSION}/${TARGET}/.config
-      echo "CONFIG_EXT4_USE_FOR_EXT23=n" >> /tmp/build/${VERSION}/${TARGET}/config
-      cat /tmp/build/${VERSION}/${TARGET}/.config | grep "EXT"
-      #tail /tmp/build/${VERSION}/${TARGET}/.config
-      wc -l /tmp/build/${VERSION}/${TARGET}/.config
-      if [ $VERSION == "2.6" ]; then
-        # No support for olddefconfig, need to use yes + oldconfig. The yes command is like pressing enter for each option
-        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ oldconfig >/dev/null
-        CFLAGS=""
-      elif [ $VERSION == "3.14" ]; then
-        yes "" | make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ vexpress_defconfig >/dev/null
-        CFLAGS=""
-      else
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
-        CFLAGS=""
-      fi
-      cp /tmp/build/${VERSION}/${TARGET}/.config /app/saveconfig.config
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
 
       mkdir -p /kernels/$VERSION
@@ -175,8 +120,8 @@ for TARGET in $TARGETS; do
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       
-      # Do not strip vmlinux
-      # $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
+      # strip vmlinux
+      $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
