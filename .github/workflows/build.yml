@@ -90,9 +90,6 @@ jobs:
           for archive in $(find downloaded-kernels -name "*.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
           done
-
-          ls -al downloaded-kernels
-          ls -al combined-kernels
         
           # Combine OSI profiles for each kernel version
           # otherwise the extracted kernel configs willc lobber each other
