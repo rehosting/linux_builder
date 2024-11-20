@@ -91,21 +91,34 @@ jobs:
             tar -xzf "$archive" -C combined-kernels
           done
 
+          ls -al downloaded-kernels
+          ls -al combined-kernels
+        
           # Combine OSI profiles for each kernel version
           # otherwise the extracted kernel configs willc lobber each other
           if [ -d combined-kernels/kernels/4.10 ] ; then
             for archive in $(find downloaded-kernels -name "*.tar.gz"); do
-              tar -O -xf "$archive" "kernels/4.10/osi.config";
+              if tar -tzf "$archive" "kernels/4.10/osi.config" &>/dev/null; then
+                tar -O -xf "$archive" "kernels/4.10/osi.config";
+              fi
             done > combined-kernels/kernels/4.10/osi.config
           fi
 
           if [ -d combined-kernels/kernels/6.7 ] ; then
             for archive in $(find downloaded-kernels -name "*.tar.gz"); do
-              tar -O -xf "$archive" "kernels/6.7/osi.config";
+              if tar -tzf "$archive" "kernels/6.7/osi.config" &>/dev/null; then
+                tar -O -xf "$archive" "kernels/6.7/osi.config";
+              fi
             done > combined-kernels/kernels/6.7/osi.config
           fi
 
-
+          if [ -d combined-kernels/kernels/3.14 ] ; then
+            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+              if tar -tzf "$archive" "kernels/3.14/osi.config" &>/dev/null; then
+                tar -O -xf "$archive" "kernels/3.14/osi.config";
+              fi
+            done > combined-kernels/kernels/3.14/osi.config
+          fi
 
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
