@@ -28,10 +28,13 @@ jobs:
             version: "3.14"
           - target: mipseb
             version: "3.14"
+          - target: mips64el
+            version: "3.14"
           - target: mips64eb
             version: "3.14"
           - target: x86_64
             version: "3.14"
+
 
     steps:
       - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
