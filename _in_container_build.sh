@@ -100,6 +100,7 @@ for TARGET in $TARGETS; do
       /panda/panda/plugins/osi_linux/utils/kernelinfo_gdb/run.sh \
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
+      dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
       
       # strip vmlinux     
       $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
