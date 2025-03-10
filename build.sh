@@ -26,6 +26,9 @@ CONFIG_ONLY=false
 #VERSIONS="4.10 6.7"
 VERSIONS="4.10"
 TARGETS="armeb armel arm64 mipseb mipsel mips64eb mips64el x86_64"
+NO_STRIP=false
+MENU_CONFIG=false
+INTERACTIVE=
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -47,6 +50,15 @@ while [[ $# -gt 0 ]]; do
             shift # past flag
             shift # past value
             ;;
+        --no-strip)
+            NO_STRIP=true
+            shift # past flag
+            ;;
+        --menuconfig)
+            MENU_CONFIG=true
+            INTERACTIVE=-it
+            shift # past flag
+            ;;
         --targets)
             TARGETS="$2"
             shift # past flag
@@ -61,4 +73,5 @@ done
 
 docker build -t pandare/kernel_builder .
 mkdir -p cache
-docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"
+
+docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG"
