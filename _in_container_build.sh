@@ -10,10 +10,14 @@ set -eu
 CONFIG_ONLY="$1"
 VERSIONS="$2"
 TARGETS="$3"
+NO_STRIP="$4"
+MENU_CONFIG="$5"
 
 echo "Config only: $CONFIG_ONLY"
 echo "Versions: $VERSIONS"
 echo "Targets: $TARGETS"
+echo "No strip: $NO_STRIP"
+echo "menuconfig: $MENU_CONFIG"
 
 # Set this to update defconfigs instead of building kernel
 
@@ -75,6 +79,10 @@ for TARGET in $TARGETS; do
     else
       echo "Building kernel for $TARGET"
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      if $MENU_CONFIG; then
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
+        exit
+      fi
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION
@@ -102,8 +110,10 @@ for TARGET in $TARGETS; do
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
       
-      # strip vmlinux     
-      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+      if ! $NO_STRIP; then
+        # strip vmlinux     
+        $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+      fi
     fi
 done
 done
