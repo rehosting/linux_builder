@@ -42,7 +42,18 @@ get_cc() {
         fi
         arch="arm"
     fi
+
+    if [[ $arch == *"loongarch"* ]]; then
+        echo "/opt/cross/loongarch64-linux-gcc-cross/bin/loongarch64-unknown-linux-gnu-"
+    elif [[ $arch == *"powerpc"* ]]; then
+        echo "/opt/cross/powerpc64-linux-musl-cross/bin/powerpc64-linux-musl-"
+    elif [[ $arch == "riscv64" ]]; then
+        # riscv64 linux-musl seems to run out of memory on linking so we switched
+        # to the glibc version
+        echo "/usr/bin/riscv64-linux-gnu-"
+    else
         echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+    fi
 }
 
 for VERSION in $VERSIONS; do
@@ -54,12 +65,26 @@ for TARGET in $TARGETS; do
         BUILD_TARGETS="vmlinux Image.gz"
     elif [ $TARGET == "x86_64" ]; then
         BUILD_TARGETS="vmlinux bzImage"
+    elif [ $TARGET == "loongarch64" ]; then
+        BUILD_TARGETS="vmlinux vmlinuz.efi"
+    elif [ $TARGET == "riscv32" ]; then
+        BUILD_TARGETS="vmlinux Image"
+    elif [ $TARGET == "riscv64" ]; then
+        BUILD_TARGETS="vmlinux Image"
     fi
 
     # Set short_arch based on TARGET
     short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
     if [ "$short_arch" == "mips64" ]; then
         short_arch="mips"
+    elif [ "$short_arch" == "loongarch64" ]; then
+        short_arch="loongarch"
+    elif [ "$short_arch" == "powerpc64" ]; then
+        short_arch="powerpc"
+    elif [ "$short_arch" == "riscv64" ]; then
+        short_arch="riscv"
+    elif [ "$short_arch" == "riscv32" ]; then
+        short_arch="riscv"
     fi
 
     echo "Building $BUILD_TARGETS for $TARGET"
@@ -103,9 +128,18 @@ for TARGET in $TARGETS; do
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" /kernels/$VERSION/bzImage.${TARGET}
       fi
       
+      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" ]; then
+          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" /kernels/$VERSION/Image.${TARGET}
+      fi
+      
       # Copy out Image.gz (if present) 
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" /kernels/$VERSION/zImage.${TARGET}
+      fi
+      
+      # Copy out vmlinuz.efi (if present)
+      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" ]; then
+          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
       
       cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
@@ -127,7 +161,7 @@ done
 
 if ! $CONFIG_ONLY; then
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
-  tar cvfz /app/kernels-latest.tar.gz /kernels
+  tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
 fi
 
