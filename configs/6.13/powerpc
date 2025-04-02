@@ -1,0 +1,3 @@
+#include "all-common.inc"
+CONFIG_PPC=y
+CONFIG_SMP=y
