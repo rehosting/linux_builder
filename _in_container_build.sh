@@ -12,12 +12,14 @@ VERSIONS="$2"
 TARGETS="$3"
 NO_STRIP="$4"
 MENU_CONFIG="$5"
+DIFFDEFCONFIG="$6"
 
 echo "Config only: $CONFIG_ONLY"
 echo "Versions: $VERSIONS"
 echo "Targets: $TARGETS"
 echo "No strip: $NO_STRIP"
 echo "menuconfig: $MENU_CONFIG"
+echo "diffdefconfig: $DIFFDEFCONFIG"
 
 # Set this to update defconfigs instead of building kernel
 
@@ -40,7 +42,7 @@ get_cc() {
         fi
         arch="arm"
     fi
-    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+        echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
 
 for VERSION in $VERSIONS; do
@@ -81,6 +83,11 @@ for TARGET in $TARGETS; do
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
       if $MENU_CONFIG; then
         make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
+        exit
+      elif $DIFFDEFCONFIG; then
+        cp /tmp/build/${VERSION}/${TARGET}/.config /tmp/original_config
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
+        /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)

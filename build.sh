@@ -25,10 +25,11 @@ EOF
 CONFIG_ONLY=false
 #VERSIONS="4.10 6.7"
 VERSIONS="4.10"
-TARGETS="armeb armel arm64 mipseb mipsel mips64eb mips64el x86_64"
+TARGETS="armel arm64 mipseb mipsel mips64eb mips64el x86_64"
 NO_STRIP=false
 MENU_CONFIG=false
 INTERACTIVE=
+DIFFDEFCONFIG=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             shift # past flag
             shift # past value
             ;;
+        --diffdefconfig)
+            DIFFDEFCONFIG=true
+            shift
+            ;;
         *)
             help
             exit 1
@@ -74,4 +79,4 @@ done
 docker build -t pandare/kernel_builder .
 mkdir -p cache
 
-docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG"
+docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"
