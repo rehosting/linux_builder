@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, x86_64]
-        version: ["4.10"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
+        version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
       - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
@@ -38,10 +38,10 @@ jobs:
         with:
           path: |
             cache
-          key: ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-${{ matrix.target }}-${{ hashFiles('**/Dockerfile', '**/*.sh') }}
+          key: ${{ runner.os }}-kernel-build-${{ matrix.version }}-${{ matrix.target }}-${{ hashFiles('**/Dockerfile', '**/*.sh') }}
           restore-keys: |
-            ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-${{ matrix.target }}-
-            ${{ runner.os }}-kernel-build-${{ matrix.kernel_version }}-
+            ${{ runner.os }}-kernel-build-${{ matrix.version }}-${{ matrix.target }}-
+            ${{ runner.os }}-kernel-build-${{ matrix.version }}-
             ${{ runner.os }}-kernel-build-
 
       - name: Lint configs
@@ -61,6 +61,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    env:
+      MATRIX_VERSIONS: ${{ toJSON(needs.build.strategy.matrix.version) }}
     permissions:
       actions: write
       contents: write
@@ -78,21 +80,14 @@ jobs:
             tar -xzf "$archive" -C combined-kernels
           done
 
-          # Combine OSI profiles for each kernel version
-          # otherwise the extracted kernel configs willc lobber each other
-          if [ -d combined-kernels/kernels/4.10 ] ; then
-            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
-              tar -O -xf "$archive" "kernels/4.10/osi.config";
-            done > combined-kernels/kernels/4.10/osi.config
-          fi
-
-          if [ -d combined-kernels/kernels/6.7 ] ; then
-            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
-              tar -O -xf "$archive" "kernels/6.7/osi.config";
-            done > combined-kernels/kernels/6.7/osi.config
-          fi
-
-
+          # Combine OSI profiles for each kernel version dynamically using matrix versions
+          for version in $(echo $MATRIX_VERSIONS | jq -r '.[]'); do
+            if [ -d "combined-kernels/kernels/$version" ] ; then
+              for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+                tar -O -xf "$archive" "kernels/$version/osi.config";
+              done > "combined-kernels/kernels/$version/osi.config"
+            fi
+          done
 
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
