@@ -80,14 +80,21 @@ jobs:
             tar -xzf "$archive" -C combined-kernels
           done
 
-          # Combine OSI profiles for each kernel version dynamically using matrix versions
-          for version in $(echo $MATRIX_VERSIONS | jq -r '.[]'); do
-            if [ -d "combined-kernels/kernels/$version" ] ; then
-              for archive in $(find downloaded-kernels -name "*.tar.gz"); do
-                tar -O -xf "$archive" "kernels/$version/osi.config";
-              done > "combined-kernels/kernels/$version/osi.config"
-            fi
-          done
+          # Combine OSI profiles for each kernel version
+          # otherwise the extracted kernel configs willc lobber each other
+          if [ -d combined-kernels/kernels/4.10 ] ; then
+            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+              tar -O -xf "$archive" "kernels/4.10/osi.config";
+            done > combined-kernels/kernels/4.10/osi.config
+          fi
+
+          if [ -d combined-kernels/kernels/6.13 ] ; then
+            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+              tar -O -xf "$archive" "kernels/6.13/osi.config";
+            done > combined-kernels/kernels/6.13/osi.config
+          fi
+
+
 
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
