@@ -9,4 +9,7 @@ RUN apt-get update && apt-get -y install gdb xonsh flex bison libssl-dev libelf-
 RUN apt-get -y install bsdmainutils zstd cpio gcc-riscv64-linux-gnu
 
 # Get panda for kernelinfo_gdb. Definitely a bit overkill to pull the whole repo
-RUN git clone --depth 1 https://github.com/panda-re/panda.git
+RUN mkdir /extract_kernelinfo && \
+    wget https://raw.githubusercontent.com/panda-re/panda-ng/refs/heads/main/plugins/osi_linux/utils/kernelinfo_gdb/extract_kernelinfo.py -O /extract_kernelinfo/extract_kernelinfo.py && \
+    wget https://raw.githubusercontent.com/panda-re/panda-ng/refs/heads/main/plugins/osi_linux/utils/kernelinfo_gdb/run.sh -O /extract_kernelinfo/run.sh && \
+    chmod +x /extract_kernelinfo/run.sh
