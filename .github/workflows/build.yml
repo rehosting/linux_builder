@@ -19,7 +19,7 @@ jobs:
 
     strategy:
       matrix:
-        target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, x86_64]
+        target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, powerpc, powerpc64, loongarch64, riscv64, x86_64]
         version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
