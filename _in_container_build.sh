@@ -146,7 +146,7 @@ for TARGET in $TARGETS; do
 
       # Generate OSI profile
       echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
-      /panda/panda/plugins/osi_linux/utils/kernelinfo_gdb/run.sh \
+      /extract_kernelinfo/run.sh \
         /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
