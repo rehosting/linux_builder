@@ -79,7 +79,7 @@ for TARGET in $TARGETS; do
         short_arch="mips"
     elif [ "$short_arch" == "loongarch64" ]; then
         short_arch="loongarch"
-    elif [ "$short_arch" == "powerpc64" ]; then
+    elif [[ "$short_arch" == "powerpc64" || "$short_arch" == "powerpc64le" || "$short_arch" == "powerpcle" ]]; then
         short_arch="powerpc"
     elif [ "$short_arch" == "riscv64" ]; then
         short_arch="riscv"

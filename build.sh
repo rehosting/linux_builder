@@ -25,7 +25,7 @@ EOF
 CONFIG_ONLY=false
 #VERSIONS="4.10 6.7"
 VERSIONS="4.10"
-TARGETS="armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpc64 loongarch64 riscv64 x86_64"
+TARGETS="armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpcle powerpc64 powerpc64le loongarch64 riscv64 x86_64"
 NO_STRIP=false
 MENU_CONFIG=false
 INTERACTIVE=
