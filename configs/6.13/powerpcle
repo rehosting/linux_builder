@@ -1,0 +1,2 @@
+#include "powerpc"
+CONFIG_CPU_LITTLE_ENDIAN=y
