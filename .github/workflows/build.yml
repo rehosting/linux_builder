@@ -33,8 +33,9 @@ jobs:
       - name: Pull kernel source
         run: git submodule update --init --depth 1
 
-      - name: Cache kernel build objects
-        uses: actions/cache@v4
+      - name: Restore kernel build cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
@@ -49,6 +50,14 @@ jobs:
 
       - name: Build Kernel for ${{ matrix.target }}
         run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
+      
+      - name: Save kernel build cache
+        id: save-cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            cache
+          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
 
       # Temporarily store each target's build output
       - name: Save ${{ matrix.target }} ${{ matrix.version }} build output
