@@ -21,6 +21,9 @@ echo "No strip: $NO_STRIP"
 echo "menuconfig: $MENU_CONFIG"
 echo "diffdefconfig: $DIFFDEFCONFIG"
 
+# Array to keep track of child processes
+declare -a pids
+
 # Set this to update defconfigs instead of building kernel
 
 get_cc() {
@@ -142,24 +145,43 @@ for TARGET in $TARGETS; do
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
       
-      cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
+      # Launch kernel processing in subprocess
+      (
+          # Former "start here" section
+          cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
 
-      # Generate OSI profile
-      echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
-      /extract_kernelinfo/run.sh \
-        /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
-      cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
-      dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
+          # Generate OSI profile
+          echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
+          /extract_kernelinfo/run.sh \
+            /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
+          cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
+          dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
+          
+          if ! $NO_STRIP; then
+            # strip vmlinux     
+            $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+          fi
+          # Former "end here" section
+          
+          echo "Completed processing for $TARGET ($VERSION)"
+      ) &
       
-      if ! $NO_STRIP; then
-        # strip vmlinux     
-        $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
-      fi
+      # Store the PID of the background process
+      pids+=($!)
+      echo "Started background process ${pids[-1]} for $TARGET ($VERSION)"
     fi
 done
 done
 
 if ! $CONFIG_ONLY; then
+  echo "Waiting for all kernel processing to complete..."
+  # Wait for all background processes to complete
+  for pid in "${pids[@]}"; do
+    wait $pid
+    echo "Process $pid completed"
+  done
+  
+  echo "All processes completed, creating final archive"
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
