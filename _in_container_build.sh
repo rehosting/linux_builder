@@ -146,15 +146,15 @@ for TARGET in $TARGETS; do
       fi
       
       # Launch kernel processing in subprocess
-      (
+      time (
           # Former "start here" section
           cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
 
           # Generate OSI profile
-          echo "[${TARGET}]" >> /kernels/$VERSION/osi.config
+          echo "[${TARGET}]" >> /kernels/$VERSION/osi.${TARGET}.config
           /extract_kernelinfo/run.sh \
             /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
-          cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
+          cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.${TARGET}.config
           dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
           
           if ! $NO_STRIP; then
@@ -179,6 +179,9 @@ if ! $CONFIG_ONLY; then
   for pid in "${pids[@]}"; do
     wait $pid
     echo "Process $pid completed"
+  done
+  for VERSION in $VERSIONS; do
+    cat /kernels/$VERSION/osi.*.config >> /kernels/$VERSION/osi.config
   done
   
   echo "All processes completed, creating final archive"
