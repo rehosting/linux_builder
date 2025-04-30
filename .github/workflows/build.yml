@@ -44,7 +44,9 @@ jobs:
             cache
           key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
           restore-keys: |
-            kernel-build-${{ matrix.version }}-${{ matrix.target }}-
+            kernel-build-${{ matrix.version }}-${{ matrix.target }}
+            kernel-build-${{ matrix.version }}-
+            kernel-build-
 
       # - name: Lint configs
         # run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }} --config-only
@@ -58,7 +60,7 @@ jobs:
         with:
           path: |
             cache
-          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
+          key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
 
       # Temporarily store each target's build output
       - name: Save ${{ matrix.target }} ${{ matrix.version }} build output
