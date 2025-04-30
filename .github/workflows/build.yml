@@ -33,17 +33,18 @@ jobs:
       - name: Pull kernel source
         run: git submodule update --init --depth 1
 
+      - name: Ensure cache directory exists
+        run: mkdir -p cache
+
       - name: Restore kernel build cache
         id: restore-cache
         uses: actions/cache/restore@v4
         with:
           path: |
             cache
-          key: ${{ runner.os }}-kernel-build-${{ matrix.version }}-${{ matrix.target }}-${{ hashFiles('**/Dockerfile', '**/*.sh') }}
+          key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
           restore-keys: |
-            ${{ runner.os }}-kernel-build-${{ matrix.version }}-${{ matrix.target }}-
-            ${{ runner.os }}-kernel-build-${{ matrix.version }}-
-            ${{ runner.os }}-kernel-build-
+            kernel-build-${{ matrix.version }}-${{ matrix.target }}-
 
       # - name: Lint configs
         # run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }} --config-only
