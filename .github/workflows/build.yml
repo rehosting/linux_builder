@@ -53,13 +53,25 @@ jobs:
 
       - name: Build Kernel for ${{ matrix.target }}
         run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
-      
+            
       - name: Save kernel build cache
         id: save-cache
         uses: actions/cache/save@v4
         with:
           path: |
-            cache
+            cache/${{ matrix.version }}/${{ matrix.target }}/.config
+            cache/${{ matrix.version }}/${{ matrix.target }}/**/*.o
+            cache/${{ matrix.version }}/${{ matrix.target }}/**/*.ko
+            cache/${{ matrix.version }}/${{ matrix.target }}/**/*.cmd
+            cache/${{ matrix.version }}/${{ matrix.target }}/include/generated
+            cache/${{ matrix.version }}/${{ matrix.target }}/include/config
+            cache/${{ matrix.version }}/${{ matrix.target }}/scripts
+            cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/include/generated
+            # Potentially include intermediate link objects like built-in.a if needed
+            # Exclude large final artifacts (may be complex due to glob issues)
+            !cache/${{ matrix.version }}/${{ matrix.target }}vmlinux
+            !cache/${{ matrix.version }}/${{ matrix.target }}System.map
+            !cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/boot/
           key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
 
       # Temporarily store each target's build output
