@@ -182,6 +182,21 @@ if ! $CONFIG_ONLY; then
   done
   for VERSION in $VERSIONS; do
     cat /kernels/$VERSION/osi.*.config >> /kernels/$VERSION/osi.config
+
+    mkdir -p /kernels/$VERSION/includes
+
+    copy_files=(
+        "drivers/igloo/portal/portal_types.h"
+        "drivers/igloo/igloo_hypercall_consts.h"
+        "fs/hyperfs/hyperfs_consts.h"
+    )
+
+    for file in "${copy_files[@]}"; do
+        src_path="/app/linux/$VERSION/$file"
+        if [ -f "$src_path" ]; then
+            cp "$src_path" /kernels/$VERSION/includes/
+        fi
+    done
   done
   
   echo "All processes completed, creating final archive"
