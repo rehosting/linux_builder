@@ -16,8 +16,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Build this first, build.sh will use it later
       - name: Build kernel_builder Docker image
         run: docker build -t pandare/kernel_builder .
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: rehosting
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create ephemeral Dockerfile
+        run: |
+          cat <<EOF > Dockerfile.linux_builder
+          FROM pandare/kernel_builder
+          COPY . /linux_builder
+          EOF
+
+      - name: Update submodules
+        run: git submodule update --init --depth 1
+
+      - name: Build linux_builder Docker image
+        run: |
+          docker build -t rehosting/linux_builder:${{ github.ref_name }} -t rehosting/linux_builder:latest -f Dockerfile.linux_builder .
+          docker push rehosting/linux_builder:${{ github.ref_name }}
+
+      - name: Push Docker image as latest if on main
+        if: github.ref == 'refs/heads/main'
+        run: docker push rehosting/linux_builder:latest
 
   build:
     needs: prebuild
@@ -33,15 +62,6 @@ jobs:
         version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
-      - uses: actions/checkout@v4 # Clones to $GITHUB_WORKSPACE
-        with:
-          fetch-depth: 0
-          #submodules: 'true'
-
-      # Instead of getting submodules with checkout, we can do it manually to control depth.
-      # We don't want a full Linux history
-      - name: Pull kernel source
-        run: git submodule update --init --depth 1
 
       # - name: Ensure cache directory exists
       #   run: mkdir -p cache
@@ -91,14 +111,14 @@ jobs:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: kernels-latest.tar.gz
 
-      - name: Tar up intermediate output (xz compression)
-        run: tar -cJvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz linux/${{ matrix.version }}
+      - name: Tar up intermediate output
+        run: tar -czvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.gz cache/${{ matrix.version }}/${{ matrix.target }}
 
-      - name: Upload intermediate output
+      - name: Upload build cache
         uses: actions/upload-artifact@v4
         with:
           name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
-          path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
+          path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.gz
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -147,26 +167,27 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
-      - name: Prepare Docker build context for intermediate artifacts
+      - name: Prepare Docker build context for artifact container
         run: |
           # Create a directory for the Docker build context
           mkdir -p docker-context
-          # Clone the linux_builder repo at the current branch or tag
-          git clone --depth 1 --branch "${GITHUB_REF_NAME}" --recurse-submodules https://github.com/${GITHUB_REPOSITORY} docker-context/linux_builder
-          cd docker-context/linux_builder && git submodule update --init --depth 1
           # Copy all intermediate tarballs (xz)
-          find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/ \;
+          find downloaded-kernels -name "build-intermediate-*.tar.gz" -exec cp {} docker-context/ \;
           # Copy the combined kernel tarball
           cp kernels-latest.tar.gz docker-context/
 
       # Note: This assumes that there is no CMD or anything at the end of the Dockerfile
       - name: Update Dockerfile
         run: |
-          cp docker-context/linux_builder/Dockerfile docker-context/
-          cat <<EOF >> docker-context/Dockerfile
-          COPY build-intermediate-*.tar.xz /artifacts/
-          COPY kernels-latest.tar.gz /artifacts/
-          COPY linux_builder /linux_builder
+          cat <<'EOF' > docker-context/Dockerfile
+          FROM rehosting/linux_builder:latest
+          COPY build-intermediate-*.tar.gz /tmp/
+          COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
+          RUN mkdir -p /linux_builder/cache && \
+              for archive in /tmp/build-intermediate-*.tar.gz; do \
+                [ -e "\$archive" ] && tar -xzf "\$archive" -C /linux_builder/cache; \
+              done && \
+              rm -f /tmp/build-intermediate-*.tar.gz
           EOF
 
       - name: Log in to Docker Hub
@@ -177,6 +198,6 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t rehosting/linux_builder:${{ github.ref_name }} -t rehosting/linux_builder:latest docker-context
-          docker push rehosting/linux_builder:${{ github.ref_name }}
-          docker push rehosting/linux_builder:latest
+          docker build -t rehosting/linux_builder-artifacts:${{ github.ref_name }} -t rehosting/linux_builder-artifacts:latest docker-context
+          docker push rehosting/linux_builder-artifacts:${{ github.ref_name }}
+          docker push rehosting/linux_builder-artifacts:latest
