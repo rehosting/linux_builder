@@ -145,7 +145,7 @@ jobs:
         with:
           files: kernels-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ github.ref_name }}
 
       - name: Prepare Docker build context for intermediate artifacts
         run: |
