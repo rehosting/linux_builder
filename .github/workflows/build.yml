@@ -62,6 +62,8 @@ jobs:
         version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
+      - name: Pull prebuilt image
+        run: docker pull rehosting/linux_builder:${{ github.ref_name }}
 
       # - name: Ensure cache directory exists
       #   run: mkdir -p cache
@@ -82,7 +84,11 @@ jobs:
         # run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }} --config-only
 
       - name: Build Kernel for ${{ matrix.target }}
-        run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
+        run: |
+            mkdir -p cache
+            docker run  --rm -v $PWD/cache:/tmp/build \
+              rehosting/linux_builder:${{ github.ref_name }} \
+              bash /linux_builder/_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false
 
       # - name: Save kernel build cache
       #   id: save-cache
