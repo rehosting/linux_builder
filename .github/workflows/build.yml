@@ -53,7 +53,7 @@ jobs:
 
       - name: Build Kernel for ${{ matrix.target }}
         run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }}
-            
+
       # - name: Save kernel build cache
       #   id: save-cache
       #   uses: actions/cache/save@v4
@@ -81,6 +81,15 @@ jobs:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: kernels-latest.tar.gz
 
+      - name: Tar up intermediate output (xz compression)
+        run: tar -cJvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz linux/${{ matrix.version }}
+
+      - name: Upload intermediate output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
+          path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
+
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -99,26 +108,24 @@ jobs:
       - name: Combine all kernels into a single archive
         run: |
           rm -rf combined-kernels && mkdir combined-kernels
-          # Extract each kernels-latest.tar.gz archive
-          for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+          # Only extract kernels-latest.tar.gz archives, not intermediate ones
+          for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
           done
 
           # Combine OSI profiles for each kernel version
-          # otherwise the extracted kernel configs willc lobber each other
+          # otherwise the extracted kernel configs will clobber each other
           if [ -d combined-kernels/kernels/4.10 ] ; then
-            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+            for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
               tar -O -xf "$archive" "kernels/4.10/osi.config";
             done > combined-kernels/kernels/4.10/osi.config
           fi
 
           if [ -d combined-kernels/kernels/6.13 ] ; then
-            for archive in $(find downloaded-kernels -name "*.tar.gz"); do
+            for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
               tar -O -xf "$archive" "kernels/6.13/osi.config";
             done > combined-kernels/kernels/6.13/osi.config
           fi
-
-
 
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
@@ -129,3 +136,37 @@ jobs:
           files: kernels-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref }}
+
+      - name: Prepare Docker build context for intermediate artifacts
+        run: |
+          # Create a directory for the Docker build context
+          mkdir -p docker-context
+          # Clone the linux_builder repo at the current branch or tag
+          git clone --depth 1 --branch "${GITHUB_REF_NAME}" --recurse-submodules https://github.com/${GITHUB_REPOSITORY} docker-context/linux_builder
+          cd docker-context/linux_builder && git submodule update --init --depth 1
+          # Copy all intermediate tarballs (xz)
+          find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/ \;
+          # Copy the combined kernel tarball
+          cp kernels-latest.tar.gz docker-context/
+
+      # Note: This assumes that there is no CMD or anything at the end of the Dockerfile
+      - name: Update Dockerfile
+        run: |
+          cp docker-context/linux_builder/Dockerfile docker-context/
+          cat <<EOF >> docker-context/Dockerfile
+          COPY build-intermediate-*.tar.xz /artifacts/
+          COPY kernels-latest.tar.gz /artifacts/
+          COPY linux_builder /linux_builder
+          EOF
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: rehosting
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t rehosting/linux_builder:${{ github.ref_name }} -t rehosting/linux_builder:latest docker-context
+          docker push rehosting/linux_builder:${{ github.ref_name }}
+          docker push rehosting/linux_builder:latest
