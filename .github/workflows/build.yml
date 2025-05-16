@@ -34,6 +34,8 @@ jobs:
           cat <<EOF > Dockerfile.linux_builder
           FROM pandare/kernel_builder
           COPY . /linux_builder
+          RUN ln -s /linux_builder /app
+          WORKDIR /app
           EOF
 
       - name: Update submodules
@@ -88,7 +90,7 @@ jobs:
             mkdir -p cache
             docker run  --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash /linux_builder/_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false
+              bash ./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false
 
       # - name: Save kernel build cache
       #   id: save-cache
