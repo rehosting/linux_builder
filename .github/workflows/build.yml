@@ -188,7 +188,7 @@ jobs:
       - name: Update Dockerfile
         run: |
           cat <<'EOF' > docker-context/Dockerfile
-          FROM rehosting/linux_builder:latest
+          FROM rehosting/linux_builder:${{ github.ref_name }}
           COPY build-intermediate-*.tar.gz /tmp/
           COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
           RUN mkdir -p /linux_builder/cache && \
