@@ -120,7 +120,7 @@ jobs:
           path: kernels-latest.tar.gz
 
       - name: Tar up intermediate output
-        run: tar -cJvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz cache/${{ matrix.version }}/${{ matrix.target }}
+        run: tar -cvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz --use-compress-program="xz -9" cache/${{ matrix.version }}/${{ matrix.target }}
 
       - name: Upload build cache
         uses: actions/upload-artifact@v4
