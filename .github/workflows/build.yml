@@ -120,13 +120,13 @@ jobs:
           path: kernels-latest.tar.gz
 
       - name: Tar up intermediate output
-        run: tar -czvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.gz cache/${{ matrix.version }}/${{ matrix.target }}
+        run: tar -cJvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz cache/${{ matrix.version }}/${{ matrix.target }}
 
       - name: Upload build cache
         uses: actions/upload-artifact@v4
         with:
           name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
-          path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.gz
+          path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -180,7 +180,7 @@ jobs:
           # Create a directory for the Docker build context
           mkdir -p docker-context/artifacts
           # Copy all intermediate tarballs (xz)
-          find downloaded-kernels -name "build-intermediate-*.tar.gz" -exec cp {} docker-context/artifacts \;
+          find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/artifacts \;
           # Copy the combined kernel tarball
           cp kernels-latest.tar.gz docker-context/
 
