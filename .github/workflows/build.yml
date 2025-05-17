@@ -178,9 +178,9 @@ jobs:
       - name: Prepare Docker build context for artifact container
         run: |
           # Create a directory for the Docker build context
-          mkdir -p docker-context
+          mkdir -p docker-context/artifacts
           # Copy all intermediate tarballs (xz)
-          find downloaded-kernels -name "build-intermediate-*.tar.gz" -exec cp {} docker-context/ \;
+          find downloaded-kernels -name "build-intermediate-*.tar.gz" -exec cp {} docker-context/artifacts \;
           # Copy the combined kernel tarball
           cp kernels-latest.tar.gz docker-context/
 
@@ -189,13 +189,8 @@ jobs:
         run: |
           cat <<'EOF' > docker-context/Dockerfile
           FROM rehosting/linux_builder:${{ github.ref_name }}
-          COPY build-intermediate-*.tar.gz /tmp/
+          COPY ./artifacts /artifacts
           COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
-          RUN mkdir -p /linux_builder/cache && \
-              for archive in /tmp/build-intermediate-*.tar.gz; do \
-                [ -e "\$archive" ] && tar -xzf "\$archive" -C /linux_builder/cache; \
-              done && \
-              rm -f /tmp/build-intermediate-*.tar.gz
           EOF
 
       - name: Log in to Docker Hub
