@@ -88,9 +88,10 @@ jobs:
       - name: Build Kernel for ${{ matrix.target }}
         run: |
             mkdir -p cache
-            docker run  --rm -v $PWD/cache:/tmp/build \
+            docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash ./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false
+              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz"
+            mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
 
       # - name: Save kernel build cache
       #   id: save-cache
