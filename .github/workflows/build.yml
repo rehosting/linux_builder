@@ -47,7 +47,7 @@ jobs:
           docker push rehosting/linux_builder:${{ github.ref_name }}
 
       - name: Push Docker image as latest if on main
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev_6.13'
         run: docker push rehosting/linux_builder:latest
 
   build:
