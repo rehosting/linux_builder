@@ -19,25 +19,47 @@ echo "Targets: $TARGETS"
 
 get_cc() {
     local arch=$1
+    local version=$2
     local abi=""
 
     # Clear CFLAGS and KCFLAGS if they are set
     unset CFLAGS
     unset KCFLAGS
 
-    if [[ $arch == *"arm64"* ]]; then
-        abi=""
-        arch="aarch64"
-    elif [[ $arch == *"arm"* ]]; then
-        abi="eabi"
-        if [[ $arch == *"eb"* ]]; then
-            export CFLAGS="-mbig-endian"
-            export KCFLAGS="-mbig-endian"
+    if [[ $version == "4.10" ]] || [[ $version == "6.7" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            abi=""
+            arch="aarch64"
+        elif [[ $arch == *"arm"* ]]; then
+            abi="eabi"
+            if [[ $arch == *"eb"* ]]; then
+                export CFLAGS="-mbig-endian"
+                export KCFLAGS="-mbig-endian"
+            fi
+            arch="arm"
         fi
-        arch="arm"
+        echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+    elif [[ $version == "2.6" ]]; then
+        if [[ $arch == *"arm64"* ]]; then
+            echo "aarch64-linux-gnu-"
+        elif [[ $arch == *"arm"* ]]; then
+            echo "arm-linux-gnueabi-"
+        else
+            echo "gcc-4.9" #probably not this
+        fi
+    elif [[ $version == "3.14" ]]; then
+	if [[ $arch == *"arm64"* ]]; then
+            echo "aarch64-linux-gnu-"
+        elif [[ $arch == *"arm"* ]]; then
+            echo "arm-linux-gnueabi-"
+        else
+            echo "gcc-4.9" #probably not this
+        fi
+    else
+        echo "Unsupported version"
     fi
-    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
 }
+
 
 for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
@@ -46,8 +68,6 @@ for TARGET in $TARGETS; do
         BUILD_TARGETS="vmlinux zImage"
     elif [ $TARGET == "arm64" ]; then
         BUILD_TARGETS="vmlinux Image.gz"
-    elif [ $TARGET == "x86_64" ]; then
-        BUILD_TARGETS="vmlinux bzImage"
     fi
 
     # Set short_arch based on TARGET
@@ -69,23 +89,22 @@ for TARGET in $TARGETS; do
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      CFLAGS=""
+
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)  EXTRA_CFLAGS="$CFLAGS"
 
       mkdir -p /kernels/$VERSION
 
       # Copy out zImage (if present) and vmlinux (always)
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
-      fi
-
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" /kernels/$VERSION/bzImage.${TARGET}
       fi
       
       # Copy out Image.gz (if present) 
@@ -102,8 +121,8 @@ for TARGET in $TARGETS; do
       cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.config
       dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
       
-      # strip vmlinux     
-      $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+      # strip vmlinux
+      $(get_cc $TARGET $VERSION)strip /kernels/$VERSION/vmlinux.${TARGET}
     fi
 done
 done
