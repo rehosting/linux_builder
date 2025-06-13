@@ -76,6 +76,9 @@ for TARGET in $TARGETS; do
         BUILD_TARGETS="vmlinux Image"
     fi
 
+    # Want to build support for modules
+    BUILD_TARGETS="${BUILD_TARGETS} modules_prepare modules"
+
     # Set short_arch based on TARGET
     short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
     if [ "$short_arch" == "mips64" ]; then
@@ -145,8 +148,9 @@ for TARGET in $TARGETS; do
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
 
-      # Copy out config (for building modules)
+      # Copy out config and Module.symvers (for building modules)
       cp "/tmp/build/${VERSION}/${TARGET}/.config" /kernels/${VERSION}/config.${TARGET}
+      cp "/tmp/build/${VERSION}/${TARGET}/Module.symvers" /kernels/${VERSION}/Module.symvers.${TARGET}
       
       # Launch kernel processing in subprocess
       time (
