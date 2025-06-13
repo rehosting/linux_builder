@@ -144,6 +144,9 @@ for TARGET in $TARGETS; do
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
+
+      # Copy out config (for building modules)
+      cp "/tmp/build/${VERSION}/${TARGET}/.config" /kernels/${VERSION}/config.${TARGET}
       
       # Launch kernel processing in subprocess
       time (
@@ -186,8 +189,6 @@ if ! $CONFIG_ONLY; then
     mkdir -p /kernels/$VERSION/includes
 
     copy_files=(
-        "drivers/igloo/portal/portal_types.h"
-        "drivers/igloo/igloo_hypercall_consts.h"
         "fs/hyperfs/hyperfs_consts.h"
     )
 
