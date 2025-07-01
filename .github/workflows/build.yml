@@ -90,9 +90,9 @@ jobs:
             mkdir -p cache
             docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp kernel-deps-latest.tar.gz /tmp/build/kernel-deps-latest.tar.gz"
+              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp kernel-module-deps-latest.tar.gz /tmp/build/kernel-module-deps-latest.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
-            mv cache/kernel-deps-latest.tar.gz kernel-deps-latest.tar.gz
+            mv cache/kernel-module-deps-latest.tar.gz kernel-module-deps-latest.tar.gz
 
       # - name: Save kernel build cache
       #   id: save-cache
@@ -121,7 +121,7 @@ jobs:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: |
             kernels-latest.tar.gz
-            kernel-deps-latest.tar.gz
+            kernel-module-deps-latest.tar.gz
 
       #This took too much space, even with xz -9
       #- name: Tar up intermediate output
@@ -159,7 +159,7 @@ jobs:
 
           # Combine dependency artifacts
           deps_found=false
-          for archive in $(find downloaded-kernels -name "kernel-deps-latest.tar.gz"); do
+          for archive in $(find downloaded-kernels -name "kernel-module-deps-latest.tar.gz"); do
             tar -xzf "$archive" -C combined-deps
             deps_found=true
           done
@@ -181,14 +181,14 @@ jobs:
           # Create final archives
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
 
-          # Only create kernel-deps archive if we found dependency files (i.e., support building older kernels)
+          # Only create kernel-module-deps archive if we found dependency files (i.e., support building older kernels)
           if [ "$deps_found" = true ]; then
-            tar -czvf kernel-deps-latest.tar.gz -C combined-deps .
+            tar -czvf kernel-module-deps-latest.tar.gz -C combined-deps .
           else
-            echo "No kernel dependencies found, skipping kernel-deps-latest.tar.gz creation"
+            echo "No kernel dependencies found, skipping kernel-module-deps-latest.tar.gz creation"
             # Create an empty archive to avoid upload issues
             echo "No dependencies available" > combined-deps/README.txt
-            tar -czvf kernel-deps-latest.tar.gz -C combined-deps .
+            tar -czvf kernel-module-deps-latest.tar.gz -C combined-deps .
           fi
 
       - name: Create and publish release
@@ -196,7 +196,7 @@ jobs:
         with:
           files: |
             kernels-latest.tar.gz
-            kernel-deps-latest.tar.gz
+            kernel-module-deps-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
