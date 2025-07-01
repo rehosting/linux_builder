@@ -159,6 +159,16 @@ for TARGET in $TARGETS; do
       # Copy essential Makefiles for module building
       cp "/tmp/build/${VERSION}/${TARGET}/Makefile" /kernels/${VERSION}/module-build-deps/${TARGET}/ 2>/dev/null || true
 
+      # Copy kernel headers needed for module building
+      mkdir -p /kernels/${VERSION}/module-build-deps/${TARGET}/include_kernel
+      cp -r "/app/linux/$VERSION/include/linux" /kernels/${VERSION}/module-build-deps/${TARGET}/include_kernel/
+      cp -r "/app/linux/$VERSION/include/uapi" /kernels/${VERSION}/module-build-deps/${TARGET}/include_kernel/
+      cp -r "/app/linux/$VERSION/include/trace" /kernels/${VERSION}/module-build-deps/${TARGET}/include_kernel/
+
+      # Copy architecture-specific headers
+      mkdir -p /kernels/${VERSION}/module-build-deps/${TARGET}/arch_include_kernel
+      cp -r "/app/linux/$VERSION/arch/${short_arch}/include" /kernels/${VERSION}/module-build-deps/${TARGET}/arch_include_kernel/
+
       # Launch kernel processing in subprocess
       time (
           # Former "start here" section
@@ -215,8 +225,8 @@ if ! $CONFIG_ONLY; then
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar --exclude="*/module-build-deps" -cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
-  tar cvf - /kernels/*/module-build-deps | pigz > /app/kernel-deps-latest.tar.gz
-  chmod o+rw /app/kernel-deps-latest.tar.gz
+  tar cvf - /kernels/*/module-build-deps | pigz > /app/kernel-module-deps-latest.tar.gz
+  chmod o+rw /app/kernel-module-deps-latest.tar.gz
 fi
 
 # Ensure cache can be read/written by host
