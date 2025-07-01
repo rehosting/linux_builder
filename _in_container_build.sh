@@ -133,25 +133,32 @@ for TARGET in $TARGETS; do
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" /kernels/$VERSION/bzImage.${TARGET}
       fi
-      
+
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" /kernels/$VERSION/Image.${TARGET}
       fi
-      
-      # Copy out Image.gz (if present) 
+
+      # Copy out Image.gz (if present)
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" /kernels/$VERSION/zImage.${TARGET}
       fi
-      
+
       # Copy out vmlinuz.efi (if present)
       if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" ]; then
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
 
-      # Copy out config and Module.symvers (for building modules)
-      cp "/tmp/build/${VERSION}/${TARGET}/.config" /kernels/${VERSION}/config.${TARGET}
-      cp "/tmp/build/${VERSION}/${TARGET}/Module.symvers" /kernels/${VERSION}/Module.symvers.${TARGET}
-      
+      # Copy additional build artifacts needed for module building
+      mkdir -p /kernels/${VERSION}/module-build-deps/${TARGET}
+      cp "/tmp/build/${VERSION}/${TARGET}/.config" /kernels/${VERSION}/module-build-deps/${TARGET}/.config
+      cp "/tmp/build/${VERSION}/${TARGET}/Module.symvers" /kernels/${VERSION}/module-build-deps/${TARGET}/Module.symvers
+      cp -r "/tmp/build/${VERSION}/${TARGET}/include/generated" /kernels/${VERSION}/module-build-deps/${TARGET}/
+      cp -r "/tmp/build/${VERSION}/${TARGET}/scripts" /kernels/${VERSION}/module-build-deps/${TARGET}/
+      cp -r "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/include/generated" /kernels/${VERSION}/module-build-deps/${TARGET}/arch_include_generated/
+
+      # Copy essential Makefiles for module building
+      cp "/tmp/build/${VERSION}/${TARGET}/Makefile" /kernels/${VERSION}/module-build-deps/${TARGET}/ 2>/dev/null || true
+
       # Launch kernel processing in subprocess
       time (
           # Former "start here" section
@@ -163,16 +170,16 @@ for TARGET in $TARGETS; do
             /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
           cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.${TARGET}.config
           dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
-          
+
           if ! $NO_STRIP; then
-            # strip vmlinux     
+            # strip vmlinux
             $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
           fi
           # Former "end here" section
-          
+
           echo "Completed processing for $TARGET ($VERSION)"
       ) &
-      
+
       # Store the PID of the background process
       pids+=($!)
       echo "Started background process ${pids[-1]} for $TARGET ($VERSION)"
@@ -203,11 +210,13 @@ if ! $CONFIG_ONLY; then
         fi
     done
   done
-  
+
   echo "All processes completed, creating final archive"
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
-  tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
+  tar --exclude="*/module-build-deps" -cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
+  tar cvf - /kernels/*/module-build-deps | pigz > /app/kernel-deps-latest.tar.gz
+  chmod o+rw /app/kernel-deps-latest.tar.gz
 fi
 
 # Ensure cache can be read/written by host
