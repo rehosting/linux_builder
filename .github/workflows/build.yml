@@ -90,8 +90,9 @@ jobs:
             mkdir -p cache
             docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz"
+              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp kernel-deps-latest.tar.gz /tmp/build/kernel-deps-latest.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
+            mv cache/kernel-deps-latest.tar.gz kernel-deps-latest.tar.gz
 
       # - name: Save kernel build cache
       #   id: save-cache
@@ -118,7 +119,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
-          path: kernels-latest.tar.gz
+          path: |
+            kernels-latest.tar.gz
+            kernel-deps-latest.tar.gz
 
       #This took too much space, even with xz -9
       #- name: Tar up intermediate output
@@ -147,10 +150,18 @@ jobs:
 
       - name: Combine all kernels into a single archive
         run: |
-          rm -rf combined-kernels && mkdir combined-kernels
+          rm -rf combined-kernels combined-deps && mkdir combined-kernels combined-deps
+
           # Only extract kernels-latest.tar.gz archives, not intermediate ones
           for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
+          done
+
+          # Combine dependency artifacts
+          deps_found=false
+          for archive in $(find downloaded-kernels -name "kernel-deps-latest.tar.gz"); do
+            tar -xzf "$archive" -C combined-deps
+            deps_found=true
           done
 
           # Combine OSI profiles for each kernel version
@@ -167,13 +178,25 @@ jobs:
             done > combined-kernels/kernels/6.13/osi.config
           fi
 
-          # Create a new single archive from the combined content
+          # Create final archives
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
+
+          # Only create kernel-deps archive if we found dependency files (i.e., support building older kernels)
+          if [ "$deps_found" = true ]; then
+            tar -czvf kernel-deps-latest.tar.gz -C combined-deps .
+          else
+            echo "No kernel dependencies found, skipping kernel-deps-latest.tar.gz creation"
+            # Create an empty archive to avoid upload issues
+            echo "No dependencies available" > combined-deps/README.txt
+            tar -czvf kernel-deps-latest.tar.gz -C combined-deps .
+          fi
 
       - name: Create and publish release
         uses: softprops/action-gh-release@v1
         with:
-          files: kernels-latest.tar.gz
+          files: |
+            kernels-latest.tar.gz
+            kernel-deps-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
