@@ -166,6 +166,22 @@ for TARGET in $TARGETS; do
           echo "Completed processing for $TARGET ($VERSION)"
       ) &
       
+      # Create minimal kernel-devel archive for module builds
+      (
+        KBUILD_DIR="/tmp/build/${VERSION}/${TARGET}"
+        KERNEL_SRC="/app/linux/${VERSION}"
+        OUTDIR="/kernels/$VERSION/minimal-devel/${TARGET}"
+        mkdir -p "$OUTDIR"
+        cp "$KBUILD_DIR/.config" "$OUTDIR/" || true
+        cp "$KBUILD_DIR/Module.symvers" "$OUTDIR/" || true
+        cp -r "$KBUILD_DIR/include" "$OUTDIR/" || true
+        cp -r "$KBUILD_DIR/arch" "$OUTDIR/" || true
+        cp -r "$KBUILD_DIR/scripts" "$OUTDIR/" || true
+        cp "$KERNEL_SRC/Makefile" "$OUTDIR/" || true
+        cp "$KERNEL_SRC/Kconfig" "$OUTDIR/" || true
+        tar -czf "/kernels/$VERSION/kernel-devel-${TARGET}.tar.gz" -C "$OUTDIR" .
+      )
+      
       # Store the PID of the background process
       pids+=($!)
       echo "Started background process ${pids[-1]} for $TARGET ($VERSION)"
