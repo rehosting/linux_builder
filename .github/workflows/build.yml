@@ -90,38 +90,17 @@ jobs:
             mkdir -p cache
             docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp kernel-module-deps-latest.tar.gz /tmp/build/kernel-module-deps-latest.tar.gz"
+              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
-            mv cache/kernel-module-deps-latest.tar.gz kernel-module-deps-latest.tar.gz
 
-      # - name: Save kernel build cache
-      #   id: save-cache
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: |
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/.config
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.o
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.ko
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.cmd
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/include/generated
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/include/config
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/scripts
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/include/generated
-      #       # Potentially include intermediate link objects like built-in.a if needed
-      #       # Exclude large final artifacts (may be complex due to glob issues)
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}vmlinux
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}System.map
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/boot/
-      #     key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
-
-      # Temporarily store each target's build output
+      # Store both the kernels and the full build cache
       - name: Save ${{ matrix.target }} ${{ matrix.version }} build output
         uses: actions/upload-artifact@v4
         with:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: |
             kernels-latest.tar.gz
-            kernel-module-deps-latest.tar.gz
+            cache/${{ matrix.version }}/${{ matrix.target }}/
 
       #This took too much space, even with xz -9
       #- name: Tar up intermediate output
@@ -150,18 +129,11 @@ jobs:
 
       - name: Combine all kernels into a single archive
         run: |
-          rm -rf combined-kernels combined-deps && mkdir combined-kernels combined-deps
+          rm -rf combined-kernels && mkdir combined-kernels
 
-          # Only extract kernels-latest.tar.gz archives, not intermediate ones
+          # Only extract kernels-latest.tar.gz archives
           for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
-          done
-
-          # Combine dependency artifacts
-          deps_found=false
-          for archive in $(find downloaded-kernels -name "kernel-module-deps-latest.tar.gz"); do
-            tar -xzf "$archive" -C combined-deps
-            deps_found=true
           done
 
           # Combine OSI profiles for each kernel version
@@ -178,7 +150,7 @@ jobs:
             done > combined-kernels/kernels/6.13/osi.config
           fi
 
-          # Create final archives
+          # Create final archive
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
 
           # Only create kernel-module-deps archive if we found dependency files (i.e., support building older kernels)
@@ -196,7 +168,6 @@ jobs:
         with:
           files: |
             kernels-latest.tar.gz
-            kernel-module-deps-latest.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
@@ -231,3 +202,55 @@ jobs:
       #    docker build -t rehosting/linux_builder-artifacts:${{ github.ref_name }} -t rehosting/linux_builder-artifacts:latest docker-context
       #    docker push rehosting/linux_builder-artifacts:${{ github.ref_name }}
       #    docker push rehosting/linux_builder-artifacts:latest
+
+  build-containers:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, powerpc, powerpc64, loongarch64, riscv64, x86_64]
+        version: ["6.13"]
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: rehosting
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Download build artifacts for ${{ matrix.target }}
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-${{ matrix.target }}.${{ matrix.version }}
+          path: artifacts
+
+      - name: Create container with build artifacts for ${{ matrix.target }}
+        run: |
+          # Create Dockerfile for this architecture's build artifacts
+          cat > Dockerfile.build-${{ matrix.target }} << 'EOF'
+          FROM rehosting/linux_builder:${{ github.ref_name }}
+
+          # Copy the specific build cache for this architecture
+          COPY artifacts/${{ matrix.version }}/${{ matrix.target }}/ /tmp/build/${{ matrix.version }}/${{ matrix.target }}/
+
+          # Ensure proper permissions
+          RUN chmod -R o+rw /tmp/build
+
+          # Set working directory
+          WORKDIR /app
+          EOF
+
+      - name: Build and push build artifacts container for ${{ matrix.target }}
+        run: |
+          # Build the container
+          docker build -f Dockerfile.build-${{ matrix.target }} -t rehosting/linux-builder-${{ matrix.target }}:${{ github.ref_name }} .
+
+          # Also tag as latest if this is a main release
+          docker tag rehosting/linux-builder-${{ matrix.target }}:${{ github.ref_name }} rehosting/linux-builder-${{ matrix.target }}:latest
+
+          # Push both tags
+          docker push rehosting/linux-builder-${{ matrix.target }}:${{ github.ref_name }}
+          docker push rehosting/linux-builder-${{ matrix.target }}:latest
