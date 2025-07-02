@@ -90,8 +90,9 @@ jobs:
             mkdir -p cache
             docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz"
+              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /kernels/${{ matrix.version }}/kernel-devel-${{ matrix.target }}.tar.gz /tmp/build/kernel-devel-${{ matrix.target }}.${{ matrix.version }}.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
+            mv cache/kernel-devel-${{ matrix.target }}.${{ matrix.version }}.tar.gz kernel-devel-${{ matrix.target }}.${{ matrix.version }}.tar.gz
 
       # - name: Save kernel build cache
       #   id: save-cache
@@ -119,6 +120,12 @@ jobs:
         with:
           name: build-output-${{ matrix.target }}.${{ matrix.version }}
           path: kernels-latest.tar.gz
+
+      - name: Save ${{ matrix.target }} ${{ matrix.version }} kernel-devel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-devel-${{ matrix.target }}.${{ matrix.version }}
+          path: kernel-devel-${{ matrix.target }}.${{ matrix.version }}.tar.gz
 
       #This took too much space, even with xz -9
       #- name: Tar up intermediate output
@@ -170,10 +177,18 @@ jobs:
           # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
 
+      - name: Aggregate all kernel-devel artifacts
+        run: |
+          mkdir -p kernel-devel-all
+          find downloaded-kernels -name "kernel-devel-*.tar.gz" -exec cp {} kernel-devel-all/ \;
+          tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
+
       - name: Create and publish release
         uses: softprops/action-gh-release@v1
         with:
-          files: kernels-latest.tar.gz
+          files: |
+            kernels-latest.tar.gz
+            kernel-devel-all.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
