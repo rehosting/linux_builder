@@ -13,6 +13,7 @@ TARGETS="$3"
 NO_STRIP="$4"
 MENU_CONFIG="$5"
 DIFFDEFCONFIG="$6"
+KERNEL_DEVEL="${7:-false}"
 
 echo "Config only: $CONFIG_ONLY"
 echo "Versions: $VERSIONS"
@@ -120,6 +121,12 @@ for TARGET in $TARGETS; do
       fi
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
+      # Always run modules_prepare to ensure headers and Module.symvers are generated
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
+
+      # Build modules to ensure Module.symvers is generated
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
+
       mkdir -p /kernels/$VERSION
 
       # Copy out zImage (if present) and vmlinux (always)
@@ -145,7 +152,7 @@ for TARGET in $TARGETS; do
           cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
       fi
       
-      # Launch kernel processing in subprocess
+    #  Launch kernel processing in subprocess
       time (
           # Former "start here" section
           cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
@@ -165,6 +172,9 @@ for TARGET in $TARGETS; do
           
           echo "Completed processing for $TARGET ($VERSION)"
       ) &
+      # Store the PID of the background process
+      pids+=($!)
+      
       
       # Create minimal kernel-devel archive for module builds
       (
@@ -174,13 +184,19 @@ for TARGET in $TARGETS; do
         mkdir -p "$OUTDIR"
         cp "$KBUILD_DIR/.config" "$OUTDIR/" || true
         cp "$KBUILD_DIR/Module.symvers" "$OUTDIR/" || true
+        cp -r "$KERNEL_SRC/include" "$OUTDIR/" || true
         cp -r "$KBUILD_DIR/include" "$OUTDIR/" || true
-        cp -r "$KBUILD_DIR/arch" "$OUTDIR/" || true
+        mkdir -p "$OUTDIR/arch/${short_arch}"
+        cp -r "$KERNEL_SRC/arch/${short_arch}" "$OUTDIR/arch/" || true
+        cp -r "$KBUILD_DIR/arch/${short_arch}" "$OUTDIR/arch/" || true
+        cp -r "$KERNEL_SRC/scripts" "$OUTDIR/" || true
         cp -r "$KBUILD_DIR/scripts" "$OUTDIR/" || true
         cp "$KERNEL_SRC/Makefile" "$OUTDIR/" || true
         cp "$KERNEL_SRC/Kconfig" "$OUTDIR/" || true
-        tar -czf "/kernels/$VERSION/kernel-devel-${TARGET}.tar.gz" -C "$OUTDIR" .
-      )
+        # Ensure fixdep is present for out-of-tree module builds
+        cp -r "$KBUILD_DIR/scripts/" "$OUTDIR/scripts/" || true
+        tar -czf "/kernels/$VERSION/kernel-devel-${TARGET}.${VERSION}.tar.gz" -C "$OUTDIR" .
+      ) &
       
       # Store the PID of the background process
       pids+=($!)
@@ -219,6 +235,20 @@ if ! $CONFIG_ONLY; then
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
+fi
+
+if [ "$KERNEL_DEVEL" = "true" ]; then
+  echo "Aggregating all kernel-devel artifacts into kernel-devel-all.tar.gz..."
+  mkdir -p /kernels/kernel-devel-all
+  if compgen -G "/kernels/*/kernel-devel-*.tar.gz" > /dev/null; then
+    find /kernels -name 'kernel-devel-*.tar.gz' -exec cp {} /kernels/kernel-devel-all/ \;
+    tar -czvf /app/kernel-devel-all.tar.gz -C /kernels/kernel-devel-all .
+    rm -rf /kernels/kernel-devel-all
+    echo "Done. Artifacts: kernel-devel-*.tar.gz, kernel-devel-all.tar.gz"
+  else
+    echo "No kernel-devel-*.tar.gz files found to aggregate."
+  fi
+  exit 0
 fi
 
 # Ensure cache can be read/written by host

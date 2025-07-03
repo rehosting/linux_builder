@@ -30,6 +30,7 @@ NO_STRIP=false
 MENU_CONFIG=false
 INTERACTIVE=
 DIFFDEFCONFIG=false
+KERNEL_DEVEL=true
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -69,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             DIFFDEFCONFIG=true
             shift
             ;;
+        --kernel-devel)
+            KERNEL_DEVEL=true
+            shift
+            ;;
         *)
             help
             exit 1
@@ -79,4 +84,4 @@ done
 docker build -t pandare/kernel_builder .
 mkdir -p cache
 
-docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"
+docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG" "$KERNEL_DEVEL"
