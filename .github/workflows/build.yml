@@ -19,6 +19,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Log git revisions of all linux projects
+        run: |
+          echo "Main repo revision:" && git rev-parse HEAD
+          echo
+          echo "Submodule revisions:" && git submodule status
+          echo
+          echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
+
       # Build this first, build.sh will use it later
       - name: Build kernel_builder Docker image
         run: docker build -t pandare/kernel_builder .
@@ -136,6 +144,23 @@ jobs:
       #  with:
       #    name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
       #    path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
+
+      - name: Log git revisions of all linux projects
+        run: |
+          echo "Main repo revision:" >> build-revisions.txt
+          git rev-parse HEAD >> build-revisions.txt
+          echo >> build-revisions.txt
+          echo "Submodule revisions:" >> build-revisions.txt
+          git submodule status >> build-revisions.txt
+          echo >> build-revisions.txt
+          echo "Full submodule SHAs:" >> build-revisions.txt
+          git submodule foreach 'echo $name: $(git rev-parse HEAD)' >> build-revisions.txt'
+
+      - name: Upload build revision log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-revisions
+          path: build-revisions.txt
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
