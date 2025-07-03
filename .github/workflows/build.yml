@@ -146,17 +146,6 @@ jobs:
       #    name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
       #    path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
 
-      - name: Log git revisions of all linux projects
-        run: |
-          echo "Main repo revision:" >> build-revisions.txt
-          git rev-parse HEAD >> build-revisions.txt
-          echo >> build-revisions.txt
-          echo "Submodule revisions:" >> build-revisions.txt
-          git submodule status >> build-revisions.txt
-          echo >> build-revisions.txt
-          echo "Full submodule SHAs:" >> build-revisions.txt
-          git submodule foreach 'echo $name: $(git rev-parse HEAD)' >> build-revisions.txt'
-
       - name: Upload build revision log
         uses: actions/upload-artifact@v4
         with:
