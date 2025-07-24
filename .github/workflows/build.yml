@@ -19,6 +19,23 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
+      
+      - name: Trust Harbor's self-signed certificate
+        run: |
+          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
+          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
+          sudo update-ca-certificates
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
+          buildkitd-config-inline: |
+            [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
+              insecure = true
+              http = true
 
       - name: Log git revisions of all linux projects
         run: |
@@ -28,15 +45,22 @@ jobs:
           echo
           echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
 
-      # Build this first, build.sh will use it later
-      - name: Build kernel_builder Docker image
-        run: docker build -t pandare/kernel_builder .
-
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: rehosting
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Log in to Rehosting Arc Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REHOSTING_ARC_REGISTRY }}
+          username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
+          password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
+
+      # Build this first, build.sh will use it later
+      - name: Build kernel_builder Docker image
+        run: docker build -t pandare/kernel_builder .
 
       - name: Create ephemeral Dockerfile
         run: |
@@ -49,15 +73,26 @@ jobs:
 
       - name: Update submodules
         run: git submodule update --init --depth 1
-
-      - name: Build linux_builder Docker image
-        run: |
-          docker build -t rehosting/linux_builder:${{ github.ref_name }} -t rehosting/linux_builder:latest -f Dockerfile.linux_builder .
-          docker push rehosting/linux_builder:${{ github.ref_name }}
-
-      #f: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev_6.13'
-      - name: Push Docker image as latest
-        run: docker push rehosting/linux_builder:latest
+      
+      - name: Build Docker image and push to Docker Hub
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.linux_builder
+          push: true
+          tags: |
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ github.ref_name }}
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:latest
+            rehosting/linux_builder:${{github.ref_name}}
+            rehosting/linux_builder:latest
+          build-args: |
+            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
+          cache-from: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache-PR-${{github.event.number}},mode=max
+          cache-to: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache-PR-${{ github.event.number }}
 
   build:
     needs: prebuild
@@ -73,8 +108,15 @@ jobs:
         version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
 
     steps:
+      - name: Trust Harbor's self-signed certificate
+        run: |
+          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
+          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
+          sudo update-ca-certificates
       - name: Pull prebuilt image
-        run: docker pull rehosting/linux_builder:${{ github.ref_name }}
+        run: |
+          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}rehosting/linux_builder:${{ github.ref_name }}
+          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
 
       # - name: Ensure cache directory exists
       #   run: mkdir -p cache
