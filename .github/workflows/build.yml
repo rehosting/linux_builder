@@ -54,7 +54,7 @@ jobs:
       - name: Log in to Rehosting Arc Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.REHOSTING_ARC_REGISTRY }}
+          registry: harbor.harbor.svc.cluster.local
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
@@ -249,30 +249,30 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
 
-      - name: Prepare Docker build context for artifact container
-        run: |
-          # Create a directory for the Docker build context
-          mkdir -p docker-context/artifacts
-          # Not copying intermediate tarballs (xz)
-          # find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/artifacts \;
-          # Copy the combined kernel tarball
-          cp kernels-latest.tar.gz docker-context/
+      # - name: Prepare Docker build context for artifact container
+      #   run: |
+      #     # Create a directory for the Docker build context
+      #     mkdir -p docker-context/artifacts
+      #     # Not copying intermediate tarballs (xz)
+      #     # find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/artifacts \;
+      #     # Copy the combined kernel tarball
+      #     cp kernels-latest.tar.gz docker-context/
 
-      # Note: This assumes that there is no CMD or anything at the end of the Dockerfile
-      - name: Update Dockerfile
-        run: |
-          cat <<'EOF' > docker-context/Dockerfile
-          FROM rehosting/linux_builder:${{ github.ref_name }}
-          # Not doing this anymore
-          # COPY ./artifacts /artifacts
-          COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
-          EOF
+      # # Note: This assumes that there is no CMD or anything at the end of the Dockerfile
+      # - name: Update Dockerfile
+      #   run: |
+      #     cat <<'EOF' > docker-context/Dockerfile
+      #     FROM rehosting/linux_builder:${{ github.ref_name }}
+      #     # Not doing this anymore
+      #     # COPY ./artifacts /artifacts
+      #     COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
+      #     EOF
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: rehosting
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # - name: Log in to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: rehosting
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Not building artifacts image anymore
       #- name: Build and push Docker image
