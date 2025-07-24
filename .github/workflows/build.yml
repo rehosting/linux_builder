@@ -88,7 +88,8 @@ jobs:
       - name: Update submodules
         run: git submodule update --init --depth 1
       
-      - name: Build Docker image and push to Docker Hub
+      # no longer pushing to dockerhub since harbor replicates for us
+      - name: Build Docker image and push to harbor
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -97,8 +98,6 @@ jobs:
           tags: |
             ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ github.ref_name }}
             ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:latest
-            rehosting/linux_builder:${{github.ref_name}}
-            rehosting/linux_builder:latest
           build-args: |
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
           cache-from: |
@@ -129,8 +128,8 @@ jobs:
           sudo update-ca-certificates
       - name: Pull prebuilt image
         run: |
-          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}rehosting/linux_builder:${{ github.ref_name }}
-          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
+          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }}
+          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
 
       # - name: Ensure cache directory exists
       #   run: mkdir -p cache
