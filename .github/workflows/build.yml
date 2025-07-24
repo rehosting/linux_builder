@@ -78,9 +78,8 @@ jobs:
 
       - name: Create ephemeral Dockerfile
         run: |
-          docker tag ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:latest pandare/kernel_builder
           cat <<EOF > Dockerfile.linux_builder
-          FROM pandare/kernel_builder
+          FROM ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
           COPY . /linux_builder
           RUN ln -s /linux_builder /app
           WORKDIR /app
