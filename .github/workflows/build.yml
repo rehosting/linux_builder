@@ -59,11 +59,27 @@ jobs:
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
       # Build this first, build.sh will use it later
-      - name: Build kernel_builder Docker image
-        run: docker build -t pandare/kernel_builder .
+      - name: Build kernel_builder docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.linux_builder
+          push: true
+          tags: |
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:latest
+          build-args: |
+            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
+          cache-from: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builderr:cache-PR-${{github.event.number}},mode=max
+          cache-to: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache-PR-${{ github.event.number }}
 
       - name: Create ephemeral Dockerfile
         run: |
+          docker tag ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:latest pandare/kernel_builder
           cat <<EOF > Dockerfile.linux_builder
           FROM pandare/kernel_builder
           COPY . /linux_builder
