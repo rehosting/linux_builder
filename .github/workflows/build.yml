@@ -54,7 +54,7 @@ jobs:
       - name: Log in to Rehosting Arc Registry
         uses: docker/login-action@v3
         with:
-          registry: harbor.harbor.svc.cluster.local
+          registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
