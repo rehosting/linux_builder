@@ -114,7 +114,6 @@ jobs:
     runs-on: rehosting-arc
     if: github.event.pull_request.draft == false
 
-
     strategy:
       matrix:
         target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, powerpc, powerpc64, loongarch64, riscv64, x86_64]
@@ -139,23 +138,17 @@ jobs:
           docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }}
           docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
 
-      # - name: Ensure cache directory exists
-      #   run: mkdir -p cache
+      - uses: oras-project/setup-oras@v1.2.3
 
-      # - name: Restore kernel build cache
-      #   id: restore-cache
-      #   uses: actions/cache/restore@v4
-      #   with:
-      #     path: |
-      #       cache
-      #     key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
-      #     restore-keys: |
-      #       kernel-build-${{ matrix.version }}-${{ matrix.target }}
-      #       kernel-build-${{ matrix.version }}-
-      #       kernel-build-
-
-      # - name: Lint configs
-        # run: ./build.sh --targets ${{ matrix.target }} --versions ${{ matrix.version }} --config-only
+      - name: Restore kernel cache from registry (if exists)
+        run: |
+          set -e
+          if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest > /dev/null 2>&1; then
+            oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest -o kernel-cache.tar.gz
+            tar -xzf kernel-cache.tar.gz
+          else
+            echo "No cache found in registry."
+          fi
 
       - name: Build Kernel for ${{ matrix.target }}
         run: |
@@ -165,49 +158,16 @@ jobs:
               bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
             mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
+            tar -czvf build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz kernels-latest.tar.gz kernel-devel-all.tar.gz
 
-      # - name: Save kernel build cache
-      #   id: save-cache
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: |
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/.config
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.o
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.ko
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/**/*.cmd
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/include/generated
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/include/config
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/scripts
-      #       cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/include/generated
-      #       # Potentially include intermediate link objects like built-in.a if needed
-      #       # Exclude large final artifacts (may be complex due to glob issues)
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}vmlinux
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}System.map
-      #       !cache/${{ matrix.version }}/${{ matrix.target }}/arch/${{ matrix.target }}/boot/
-      #     key: kernel-build-${{ matrix.version }}-${{ matrix.target }}
+      - name: Save kernel cache to registry
+        run: |
+          tar -czvf kernel-cache.tar.gz cache || true
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest:application/gzip:kernel-cache.tar.gz
 
-      # Temporarily store each target's build output
-      - name: Save ${{ matrix.target }} ${{ matrix.version }} build output
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-${{ matrix.target }}.${{ matrix.version }}
-          path: kernels-latest.tar.gz
-
-      - name: Save ${{ matrix.target }} ${{ matrix.version }} kernel-devel-all
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-devel-all-${{ matrix.target }}.${{ matrix.version }}
-          path: kernel-devel-all.tar.gz
-
-      #This took too much space, even with xz -9
-      #- name: Tar up intermediate output
-      #  run: tar -cvf build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz --use-compress-program="xz -9" cache/${{ matrix.version }}/${{ matrix.target }}
-
-      #- name: Upload build cache
-      #  uses: actions/upload-artifact@v4
-      #  with:
-      #    name: build-intermediate-${{ matrix.target }}.${{ matrix.version }}
-      #    path: build-intermediate-${{ matrix.target }}.${{ matrix.version }}.tar.xz
+      - name: Push build artifact to registry with oras
+        run: |
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }}:application/gzip:build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
 
       - name: Upload build revision log
         uses: actions/upload-artifact@v4
@@ -225,29 +185,43 @@ jobs:
       actions: write
       contents: write
     steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: downloaded-kernels
+      - uses: oras-project/setup-oras@v1.2.3
+
+      - name: Pull all build artifacts from registry with oras
+        run: |
+          mkdir -p downloaded-kernels
+          for target in armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64; do
+            for version in 6.13; do
+              tag="$target-$version"
+              oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels/build-output-$tag.tar.gz || echo "No artifact for $tag"
+            done
+          done
+
+      - name: Extract all build outputs
+        run: |
+          rm -rf extracted-kernels && mkdir extracted-kernels
+          for archive in $(find downloaded-kernels -name "build-output-*.tar.gz"); do
+            tar -xzf "$archive" -C extracted-kernels
+          done
 
       - name: Combine all kernels into a single archive
         run: |
           rm -rf combined-kernels && mkdir combined-kernels
           # Only extract kernels-latest.tar.gz archives, not intermediate ones
-          for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
+          for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
             tar -xzf "$archive" -C combined-kernels
           done
 
           # Combine OSI profiles for each kernel version
           # otherwise the extracted kernel configs will clobber each other
           if [ -d combined-kernels/kernels/4.10 ] ; then
-            for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
+            for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
               tar -O -xf "$archive" "kernels/4.10/osi.config";
             done > combined-kernels/kernels/4.10/osi.config
           fi
 
           if [ -d combined-kernels/kernels/6.13 ] ; then
-            for archive in $(find downloaded-kernels -name "kernels-latest.tar.gz"); do
+            for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
               tar -O -xf "$archive" "kernels/6.13/osi.config";
             done > combined-kernels/kernels/6.13/osi.config
           fi
@@ -258,7 +232,7 @@ jobs:
       - name: Aggregate all kernel-devel artifacts
         run: |
           mkdir -p kernel-devel-all
-          find downloaded-kernels -name "kernel-devel-all.tar.gz" -exec cp {} kernel-devel-all/ \;
+          find extracted-kernels -name "kernel-devel-all.tar.gz" -exec cp {} kernel-devel-all/ \;
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
 
       - name: Create and publish release
@@ -269,35 +243,3 @@ jobs:
             kernel-devel-all.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
-
-      # - name: Prepare Docker build context for artifact container
-      #   run: |
-      #     # Create a directory for the Docker build context
-      #     mkdir -p docker-context/artifacts
-      #     # Not copying intermediate tarballs (xz)
-      #     # find downloaded-kernels -name "build-intermediate-*.tar.xz" -exec cp {} docker-context/artifacts \;
-      #     # Copy the combined kernel tarball
-      #     cp kernels-latest.tar.gz docker-context/
-
-      # # Note: This assumes that there is no CMD or anything at the end of the Dockerfile
-      # - name: Update Dockerfile
-      #   run: |
-      #     cat <<'EOF' > docker-context/Dockerfile
-      #     FROM rehosting/linux_builder:${{ github.ref_name }}
-      #     # Not doing this anymore
-      #     # COPY ./artifacts /artifacts
-      #     COPY kernels-latest.tar.gz /linux_builder/kernels-latest.tar.gz
-      #     EOF
-
-      # - name: Log in to Docker Hub
-      #   uses: docker/login-action@v3
-      #   with:
-      #     username: rehosting
-      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # Not building artifacts image anymore
-      #- name: Build and push Docker image
-      #  run: |
-      #    docker build -t rehosting/linux_builder-artifacts:${{ github.ref_name }} -t rehosting/linux_builder-artifacts:latest docker-context
-      #    docker push rehosting/linux_builder-artifacts:${{ github.ref_name }}
-      #    docker push rehosting/linux_builder-artifacts:latest
