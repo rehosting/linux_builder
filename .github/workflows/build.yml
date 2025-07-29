@@ -163,9 +163,14 @@ jobs:
         run: |
             # Do NOT recreate cache, use restored cache if present
             mkdir -p $GITHUB_WORKSPACE/cache
-            docker run --rm -v $GITHUB_WORKSPACE/cache:/tmp/build \
+            mkdir -p $GITHUB_WORKSPACE/ccache
+            docker run --rm \
+              -v $GITHUB_WORKSPACE/cache:/tmp/build \
+              -v $GITHUB_WORKSPACE/ccache:/ccache \
+              -e CCACHE_DIR=/ccache \
+              -e CCACHE_BASEDIR=$GITHUB_WORKSPACE/linux/${{ matrix.version }} \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
+              bash -c "export CCACHE_DIR=/ccache; export CCACHE_BASEDIR=/app/linux/${{ matrix.version }}; ./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
             mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
