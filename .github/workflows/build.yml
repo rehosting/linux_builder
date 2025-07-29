@@ -143,12 +143,17 @@ jobs:
       - name: Restore kernel cache from registry (if exists)
         run: |
           set -e
-          rm -f kernel-cache.tar.gz
+          echo "[DEBUG] Starting kernel cache restore for ${{ matrix.target }}-${{ matrix.version }}"
+          rm -rf cache kernel-cache.tar.gz
           if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
+            echo "[DEBUG] Cache found in registry, pulling..."
             oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o .
-            tar -xzf kernel-cache.tar.gz
+            mkdir -p cache
+            tar -xzf kernel-cache.tar.gz -C cache
+            echo "[DEBUG] Cache contents after extraction:"
+            ls -lR cache
           else
-            echo "No cache found in registry."
+            echo "[DEBUG] No cache found in registry."
           fi
 
       - name: Install pigz for parallel compression
@@ -167,6 +172,9 @@ jobs:
 
       - name: Save kernel cache to registry
         run: |
+          echo "[DEBUG] Saving kernel cache for ${{ matrix.target }}-${{ matrix.version }}"
+          echo "[DEBUG] Cache contents before archiving:"
+          ls -lR cache
           tar -cf - cache | pigz -p $(nproc) > kernel-cache.tar.gz || true
           oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} kernel-cache.tar.gz:application/gzip
 
