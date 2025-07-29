@@ -163,11 +163,11 @@ jobs:
       - name: Save kernel cache to registry
         run: |
           tar -czvf kernel-cache.tar.gz cache || true
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest:application/gzip:kernel-cache.tar.gz
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest kernel-cache.tar.gz:application/gzip
 
       - name: Push build artifact to registry with oras
         run: |
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }}:application/gzip:build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }} build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz:application/gzip
 
       - name: Upload build revision log
         uses: actions/upload-artifact@v4
