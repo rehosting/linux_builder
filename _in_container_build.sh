@@ -231,7 +231,7 @@ if ! $CONFIG_ONLY; then
   
   echo "All processes completed, creating final archive"
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
-  tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
+  tar cvf - --exclude='*/minimal-devel' /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
 fi
 
