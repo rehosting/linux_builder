@@ -143,9 +143,9 @@ jobs:
       - name: Restore kernel cache from registry (if exists)
         run: |
           set -e
-          rm -rf kernel-cache.tar.gz
+          rm -f kernel-cache.tar.gz
           if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
-            oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o kernel-cache.tar.gz
+            oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o .
             tar -xzf kernel-cache.tar.gz
           else
             echo "No cache found in registry."
@@ -199,7 +199,7 @@ jobs:
           for target in armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64; do
             for version in 6.13; do
               tag="$target-$version"
-              oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels/build-output-$tag.tar.gz || echo "No artifact for $tag"
+              oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels || echo "No artifact for $tag"
             done
           done
 
