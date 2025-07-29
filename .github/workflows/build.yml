@@ -151,6 +151,10 @@ jobs:
             echo "No cache found in registry."
           fi
 
+      - name: Install pigz for parallel compression
+        run: |
+          sudo apt-get update && sudo apt-get install -y pigz
+
       - name: Build Kernel for ${{ matrix.target }}
         run: |
             mkdir -p cache
@@ -159,11 +163,11 @@ jobs:
               bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
             mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
-            tar -czvf build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz kernels-latest.tar.gz kernel-devel-all.tar.gz
+            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
 
       - name: Save kernel cache to registry
         run: |
-          tar -czvf kernel-cache.tar.gz cache || true
+          tar -cf - cache | pigz -p $(nproc) > kernel-cache.tar.gz || true
           oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} kernel-cache.tar.gz:application/gzip
 
       - name: Push build artifact to registry with oras
