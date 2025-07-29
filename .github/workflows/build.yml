@@ -170,12 +170,6 @@ jobs:
         run: |
           oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }} build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz:application/gzip
 
-      - name: Upload build revision log
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-revisions
-          path: build-revisions.txt
-
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
