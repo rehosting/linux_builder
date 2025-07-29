@@ -143,12 +143,17 @@ jobs:
       - name: Restore kernel cache from registry (if exists)
         run: |
           set -e
-          echo "[DEBUG] Starm -f kernel-cache.tar.gz
+          echo "[DEBUG] Start restore -f kernel-cache.tar.gz"
+          rm -rf cache kernel-cache.tar.gz
           if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
+            echo "[DEBUG] Cache found in registry, pulling..."
             oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o .
-            tar -xzf kernel-cache.tar.gz
+            mkdir -p cache
+            tar -xzf kernel-cache.tar.gz -C cache
+            echo "[DEBUG] Cache contents after extraction:"
+            ls -lR cache
           else
-            echo "No cache found in registry."
+            echo "[DEBUG] No cache found in registry."
           fi
 
       - name: Install pigz for parallel compression
