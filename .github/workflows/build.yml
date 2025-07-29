@@ -185,6 +185,11 @@ jobs:
       actions: write
       contents: write
     steps:
+      - name: Trust Harbor's self-signed certificate
+        run: |
+          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
+          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
+          sudo update-ca-certificates
       - uses: oras-project/setup-oras@v1.2.3
 
       - name: Pull all build artifacts from registry with oras
