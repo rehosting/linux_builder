@@ -219,8 +219,10 @@ jobs:
         run: |
           rm -rf extracted-kernels && mkdir extracted-kernels
           for archive in $(find downloaded-kernels -name "build-output-*.tar.gz"); do
-            echo "[DEBUG] Extracting $archive"
-            tar -xzf "$archive" -C extracted-kernels
+            archver=$(basename "$archive" | sed 's/build-output-\(.*\)\.tar\.gz/\1/')
+            mkdir -p extracted-kernels/$archver
+            echo "[DEBUG] Extracting $archive to extracted-kernels/$archver"
+            tar -xzf "$archive" -C extracted-kernels/$archver
           done
           echo "[DEBUG] Extracted build outputs:"
           find extracted-kernels
