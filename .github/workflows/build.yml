@@ -143,8 +143,9 @@ jobs:
       - name: Restore kernel cache from registry (if exists)
         run: |
           set -e
-          if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest > /dev/null 2>&1; then
-            oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest -o kernel-cache.tar.gz
+          rm -rf kernel-cache.tar.gz
+          if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
+            oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o kernel-cache.tar.gz
             tar -xzf kernel-cache.tar.gz
           else
             echo "No cache found in registry."
@@ -163,7 +164,7 @@ jobs:
       - name: Save kernel cache to registry
         run: |
           tar -czvf kernel-cache.tar.gz cache || true
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:latest kernel-cache.tar.gz:application/gzip
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} kernel-cache.tar.gz:application/gzip
 
       - name: Push build artifact to registry with oras
         run: |
