@@ -148,8 +148,7 @@ jobs:
           if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
             echo "[DEBUG] Cache found in registry, pulling..."
             oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o .
-            mkdir -p cache
-            tar -xzf kernel-cache.tar.gz -C cache
+            tar -xzf kernel-cache.tar.gz -C $GITHUB_WORKSPACE
             echo "[DEBUG] Cache contents after extraction:"
             ls -lR cache
           else
@@ -162,8 +161,9 @@ jobs:
 
       - name: Build Kernel for ${{ matrix.target }}
         run: |
-            mkdir -p cache
-            docker run --rm -v $PWD/cache:/tmp/build \
+            # Do NOT recreate cache, use restored cache if present
+            mkdir -p $GITHUB_WORKSPACE/cache
+            docker run --rm -v $GITHUB_WORKSPACE/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
               bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
