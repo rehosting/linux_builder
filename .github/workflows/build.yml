@@ -143,17 +143,12 @@ jobs:
       - name: Restore kernel cache from registry (if exists)
         run: |
           set -e
-          echo "[DEBUG] Starting kernel cache restore for ${{ matrix.target }}-${{ matrix.version }}"
-          rm -rf cache kernel-cache.tar.gz
+          echo "[DEBUG] Starm -f kernel-cache.tar.gz
           if oras manifest fetch ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} > /dev/null 2>&1; then
-            echo "[DEBUG] Cache found in registry, pulling..."
             oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} -o .
-            mkdir -p cache
-            tar -xzf kernel-cache.tar.gz -C cache
-            echo "[DEBUG] Cache contents after extraction:"
-            ls -lR cache
+            tar -xzf kernel-cache.tar.gz
           else
-            echo "[DEBUG] No cache found in registry."
+            echo "No cache found in registry."
           fi
 
       - name: Install pigz for parallel compression
@@ -172,9 +167,6 @@ jobs:
 
       - name: Save kernel cache to registry
         run: |
-          echo "[DEBUG] Saving kernel cache for ${{ matrix.target }}-${{ matrix.version }}"
-          echo "[DEBUG] Cache contents before archiving:"
-          ls -lR cache
           tar -cf - cache | pigz -p $(nproc) > kernel-cache.tar.gz || true
           oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_cache:${{ matrix.target }}-${{ matrix.version }} kernel-cache.tar.gz:application/gzip
 
@@ -215,32 +207,42 @@ jobs:
               oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels || echo "No artifact for $tag"
             done
           done
+          echo "[DEBUG] Downloaded build artifacts:"
+          ls -lh downloaded-kernels
 
       - name: Extract all build outputs
         run: |
           rm -rf extracted-kernels && mkdir extracted-kernels
           for archive in $(find downloaded-kernels -name "build-output-*.tar.gz"); do
+            echo "[DEBUG] Extracting $archive"
             tar -xzf "$archive" -C extracted-kernels
           done
+          echo "[DEBUG] Extracted build outputs:"
+          find extracted-kernels
 
       - name: Combine all kernels into a single archive
         run: |
           rm -rf combined-kernels && mkdir combined-kernels
-          # Only extract kernels-latest.tar.gz archives, not intermediate ones
-          for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
+          echo "[DEBUG] Found kernels-latest.tar.gz files:"
+          find extracted-kernels -name "kernels-latest.tar.gz"
+          # Recursively extract all kernels-latest.tar.gz archives for all architectures/versions
+          find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
+            echo "[DEBUG] Extracting $archive into combined-kernels"
             tar -xzf "$archive" -C combined-kernels
           done
+          echo "[DEBUG] Contents of combined-kernels after extraction:"
+          find combined-kernels
 
           # Combine OSI profiles for each kernel version
           # otherwise the extracted kernel configs will clobber each other
           if [ -d combined-kernels/kernels/4.10 ] ; then
-            for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
+            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
               tar -O -xf "$archive" "kernels/4.10/osi.config";
             done > combined-kernels/kernels/4.10/osi.config
           fi
 
           if [ -d combined-kernels/kernels/6.13 ] ; then
-            for archive in $(find extracted-kernels -name "kernels-latest.tar.gz"); do
+            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
               tar -O -xf "$archive" "kernels/6.13/osi.config";
             done > combined-kernels/kernels/6.13/osi.config
           fi
