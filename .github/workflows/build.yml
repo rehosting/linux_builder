@@ -265,7 +265,11 @@ jobs:
       - name: Aggregate all kernel-devel artifacts
         run: |
           mkdir -p kernel-devel-all
-          find extracted-kernels -name "kernel-devel-all.tar.gz" -exec cp {} kernel-devel-all/ \;
+          for archive in $(find extracted-kernels -name "kernel-devel-all.tar.gz"); do
+            archver=$(dirname "$archive" | xargs basename)
+            mkdir -p kernel-devel-all/$archver
+            tar -xzf "$archive" -C kernel-devel-all/$archver
+          done
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
 
       - name: Create and publish release
