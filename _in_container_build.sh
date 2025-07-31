@@ -191,11 +191,12 @@ for TARGET in $TARGETS; do
         cp -r "$KBUILD_DIR/arch/${short_arch}" "$OUTDIR/arch/" || true
         cp -r "$KERNEL_SRC/scripts" "$OUTDIR/" || true
         cp -r "$KBUILD_DIR/scripts" "$OUTDIR/" || true
+        cp -r "$KERNEL_SRC/tools" "$OUTDIR/" || true
+        cp -r "$KBUILD_DIR/tools" "$OUTDIR/" || true
         cp "$KERNEL_SRC/Makefile" "$OUTDIR/" || true
         cp "$KERNEL_SRC/Kconfig" "$OUTDIR/" || true
         # Ensure fixdep is present for out-of-tree module builds
         cp -r "$KBUILD_DIR/scripts/" "$OUTDIR/scripts/" || true
-        tar -czf "/kernels/$VERSION/kernel-devel-${TARGET}.${VERSION}.tar.gz" -C "$OUTDIR" .
       ) &
       
       # Store the PID of the background process
@@ -240,14 +241,7 @@ fi
 if [ "$KERNEL_DEVEL" = "true" ]; then
   echo "Aggregating all kernel-devel artifacts into kernel-devel-all.tar.gz..."
   mkdir -p /kernels/kernel-devel-all
-  if compgen -G "/kernels/*/kernel-devel-*.tar.gz" > /dev/null; then
-    find /kernels -name 'kernel-devel-*.tar.gz' -exec cp {} /kernels/kernel-devel-all/ \;
-    tar -czvf /app/kernel-devel-all.tar.gz -C /kernels/kernel-devel-all .
-    rm -rf /kernels/kernel-devel-all
-    echo "Done. Artifacts: kernel-devel-*.tar.gz, kernel-devel-all.tar.gz"
-  else
-    echo "No kernel-devel-*.tar.gz files found to aggregate."
-  fi
+  tar -czf /app/kernel-devel-all.tar.gz -C /kernels/ /kernels/*/minimal-devel
   exit 0
 fi
 
