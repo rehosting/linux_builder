@@ -180,9 +180,12 @@ for TARGET in $TARGETS; do
       (
         KBUILD_DIR="/tmp/build/${VERSION}/${TARGET}"
         KERNEL_SRC="/app/linux/${VERSION}"
-        OUTDIR="/kernels/$VERSION/minimal-devel/${TARGET}"
+        OUTDIR="/minimal-devel/${TARGET}.${VERSION}"
         mkdir -p "$OUTDIR"
-        cp "$KBUILD_DIR/.config" "$OUTDIR/" || true
+        # Explicitly copy .config file
+        if [ -f "$KBUILD_DIR/.config" ]; then
+          cp "$KBUILD_DIR/.config" "$OUTDIR/.config"
+        fi
         cp "$KBUILD_DIR/Module.symvers" "$OUTDIR/" || true
         cp -r "$KERNEL_SRC/include" "$OUTDIR/" || true
         cp -r "$KBUILD_DIR/include" "$OUTDIR/" || true
@@ -240,8 +243,10 @@ fi
 
 if [ "$KERNEL_DEVEL" = "true" ]; then
   echo "Aggregating all kernel-devel artifacts into kernel-devel-all.tar.gz..."
-  mkdir -p /kernels/kernel-devel-all
-  tar -czf /app/kernel-devel-all.tar.gz -C /kernels/ /kernels/*/minimal-devel
+  
+  # Create the tar directly from the minimal-devel directory
+  tar -czf /app/kernel-devel-all.tar.gz -C /minimal-devel .
+  
   exit 0
 fi
 
