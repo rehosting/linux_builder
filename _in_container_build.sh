@@ -192,6 +192,12 @@ for TARGET in $TARGETS; do
         mkdir -p "$OUTDIR/arch/${short_arch}"
         cp -r "$KERNEL_SRC/arch/${short_arch}" "$OUTDIR/arch/" || true
         cp -r "$KBUILD_DIR/arch/${short_arch}" "$OUTDIR/arch/" || true
+        if [ $short_arch == "x86_64" ]; then
+          # MIPS has a different arch directory structure
+          mkdir -p "$OUTDIR/arch/x86"
+          cp -r "$KERNEL_SRC/arch/x86" "$OUTDIR/arch/" || true
+          cp -r "$KBUILD_DIR/arch/x86" "$OUTDIR/arch/" || true
+        fi
         cp -r "$KERNEL_SRC/scripts" "$OUTDIR/" || true
         cp -r "$KBUILD_DIR/scripts" "$OUTDIR/" || true
         cp -r "$KERNEL_SRC/tools" "$OUTDIR/" || true
@@ -218,35 +224,19 @@ if ! $CONFIG_ONLY; then
   done
   for VERSION in $VERSIONS; do
     cat /kernels/$VERSION/osi.*.config >> /kernels/$VERSION/osi.config
-
-    mkdir -p /kernels/$VERSION/includes
-
-    copy_files=(
-        "drivers/igloo/portal/portal_types.h"
-        "drivers/igloo/igloo_hypercall_consts.h"
-        "fs/hyperfs/hyperfs_consts.h"
-    )
-
-    for file in "${copy_files[@]}"; do
-        src_path="/app/linux/$VERSION/$file"
-        if [ -f "$src_path" ]; then
-            cp "$src_path" /kernels/$VERSION/includes/
-        fi
-    done
   done
   
   echo "All processes completed, creating final archive"
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
-  tar cvf - --exclude='*/minimal-devel' /kernels | pigz > /app/kernels-latest.tar.gz
+  tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
   chmod o+rw /app/kernels-latest.tar.gz
 fi
 
 if [ "$KERNEL_DEVEL" = "true" ]; then
   echo "Aggregating all kernel-devel artifacts into kernel-devel-all.tar.gz..."
   
-  # Create the tar directly from the minimal-devel directory
-  tar -czf /app/kernel-devel-all.tar.gz -C /minimal-devel .
-  
+  # Create the tar directly from the minimal-devel directory using pigz for parallel compression
+  tar cf - -C /minimal-devel . | pigz > /app/kernel-devel-all.tar.gz
   exit 0
 fi
 
