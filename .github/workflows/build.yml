@@ -41,11 +41,11 @@ jobs:
           echo "Submodule revisions:" && git submodule status
           echo
           echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: rehosting
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # - name: Log in to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: rehosting
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Log in to Rehosting Arc Registry
         uses: docker/login-action@v3
         with:
@@ -56,8 +56,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: false
+          load: true
           tags: |
+            pandare/kernel_builder
             ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
             ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:latest
           build-args: |
@@ -68,33 +70,16 @@ jobs:
           cache-to: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache-PR-${{ github.event.number }}
-      - name: Create ephemeral Dockerfile
-        run: |
-          cat <<EOF > Dockerfile.linux_builder
-          FROM ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
-          COPY . /linux_builder
-          RUN ln -s /linux_builder /app
-          WORKDIR /app
-          EOF
+      # - name: Create ephemeral Dockerfile
+      #   run: |
+      #     cat <<EOF > Dockerfile.linux_builder
+      #     FROM ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
+      #     COPY . /linux_builder
+      #     RUN ln -s /linux_builder /app
+      #     WORKDIR /app
+      #     EOF
       - name: Update submodules
         run: git submodule update --init --depth 1
-      - name: Build Docker image and push to harbor
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.linux_builder
-          push: true
-          tags: |
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ github.ref_name }}
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:latest
-          build-args: |
-            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-          cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache-PR-${{github.event.number}},mode=max
-          cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache-PR-${{ github.event.number }}
       - name: Build all kernels and aggregate artifacts
         run: |
           ./build.sh --versions "6.13" --targets "armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64" --kernel-devel
