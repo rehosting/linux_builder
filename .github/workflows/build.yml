@@ -12,20 +12,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  prebuild:
+  build-and-aggregate:
     runs-on: rehosting-arc
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
-      
       - name: Trust Harbor's self-signed certificate
         run: |
           echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
           openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
           sudo update-ca-certificates
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -36,7 +34,6 @@ jobs:
             [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
               insecure = true
               http = true
-
       - name: Log git revisions of all linux projects
         run: |
           echo "Main repo revision:" && git rev-parse HEAD
@@ -44,21 +41,17 @@ jobs:
           echo "Submodule revisions:" && git submodule status
           echo
           echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
-
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: rehosting
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
       - name: Log in to Rehosting Arc Registry
         uses: docker/login-action@v3
         with:
           registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-
-      # Build this first, build.sh will use it later
       - name: Build kernel_builder docker image
         uses: docker/build-push-action@v6
         with:
@@ -71,11 +64,10 @@ jobs:
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
           cache-from: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builderr:cache-PR-${{github.event.number}},mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache-PR-${{github.event.number}},mode=max
           cache-to: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache-PR-${{ github.event.number }}
-
       - name: Create ephemeral Dockerfile
         run: |
           cat <<EOF > Dockerfile.linux_builder
@@ -84,11 +76,8 @@ jobs:
           RUN ln -s /linux_builder /app
           WORKDIR /app
           EOF
-
       - name: Update submodules
         run: git submodule update --init --depth 1
-      
-      # no longer pushing to dockerhub since harbor replicates for us
       - name: Build Docker image and push to harbor
         uses: docker/build-push-action@v6
         with:
@@ -106,144 +95,9 @@ jobs:
           cache-to: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache,mode=max
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache-PR-${{ github.event.number }}
-
-  build:
-    needs: prebuild
-    # Only publish on tags. run git tag vX and git push origin vX
-    # runs-on: self-hosted
-    runs-on: rehosting-arc
-    if: github.event.pull_request.draft == false
-
-    strategy:
-      matrix:
-        target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, powerpc, powerpc64, loongarch64, riscv64, x86_64]
-        version: ["6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
-
-    steps:
-      - name: Trust Harbor's self-signed certificate
+      - name: Build all kernels and aggregate artifacts
         run: |
-          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
-          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
-          sudo update-ca-certificates
-
-      - name: Log in to Rehosting Arc Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
-          username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
-          password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-
-      - name: Pull prebuilt image
-        run: |
-          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }}
-          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
-
-      - uses: oras-project/setup-oras@v1.2.3
-
-      - name: Install pigz for parallel compression
-        run: |
-          sudo apt-get update && sudo apt-get install -y pigz
-
-      - name: Build Kernel for ${{ matrix.target }}
-        run: |
-            mkdir -p cache
-            docker run --rm -v $PWD/cache:/tmp/build \
-              rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
-            mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
-            mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
-
-      - name: Push build artifact to registry with oras
-        run: |
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }} build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz:application/gzip
-
-  aggregate:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: build
-    runs-on: rehosting-arc
-    env:
-      MATRIX_VERSIONS: ${{ toJSON(needs.build.strategy.matrix.version) }}
-    permissions:
-      actions: write
-      contents: write
-    steps:
-      - name: Trust Harbor's self-signed certificate
-        run: |
-          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
-          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
-          sudo update-ca-certificates
-      
-      - name: Log in to Rehosting Arc Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
-          username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
-          password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-      - uses: oras-project/setup-oras@v1.2.3
-
-      - name: Pull all build artifacts from registry with oras
-        run: |
-          mkdir -p downloaded-kernels
-          for target in armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64; do
-            for version in 6.13; do
-              tag="$target-$version"
-              oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels || echo "No artifact for $tag"
-            done
-          done
-          echo "[DEBUG] Downloaded build artifacts:"
-          ls -lh downloaded-kernels
-
-      - name: Extract all build outputs
-        run: |
-          rm -rf extracted-kernels && mkdir extracted-kernels
-          for archive in $(find downloaded-kernels -name "build-output-*.tar.gz"); do
-            archver=$(basename "$archive" | sed 's/build-output-\(.*\)\.tar\.gz/\1/')
-            mkdir -p extracted-kernels/$archver
-            echo "[DEBUG] Extracting $archive to extracted-kernels/$archver"
-            tar -xzf "$archive" -C extracted-kernels/$archver
-          done
-          echo "[DEBUG] Extracted build outputs:"
-          find extracted-kernels
-
-      - name: Combine all kernels into a single archive
-        run: |
-          rm -rf combined-kernels && mkdir combined-kernels
-          echo "[DEBUG] Found kernels-latest.tar.gz files:"
-          find extracted-kernels -name "kernels-latest.tar.gz"
-          # Recursively extract all kernels-latest.tar.gz archives for all architectures/versions
-          find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
-            echo "[DEBUG] Extracting $archive into combined-kernels"
-            tar -xzf "$archive" -C combined-kernels
-          done
-          echo "[DEBUG] Contents of combined-kernels after extraction:"
-          find combined-kernels
-
-          # Combine OSI profiles for each kernel version
-          # otherwise the extracted kernel configs will clobber each other
-          if [ -d combined-kernels/kernels/4.10 ] ; then
-            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
-              tar -O -xf "$archive" "kernels/4.10/osi.config";
-            done > combined-kernels/kernels/4.10/osi.config
-          fi
-
-          if [ -d combined-kernels/kernels/6.13 ] ; then
-            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
-              tar -O -xf "$archive" "kernels/6.13/osi.config";
-            done > combined-kernels/kernels/6.13/osi.config
-          fi
-
-          # Create a new single archive from the combined content
-          tar -czvf kernels-latest.tar.gz -C combined-kernels .
-
-      - name: Aggregate all kernel-devel artifacts
-        run: |
-          mkdir -p kernel-devel-all
-          for archive in $(find extracted-kernels -name "kernel-devel-all.tar.gz"); do
-            tar -xzf "$archive" -C kernel-devel-all
-          done
-          tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
-
+          ./build.sh --versions "6.13" --targets "armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64" --kernel-devel
       - name: Create and publish release
         uses: softprops/action-gh-release@v1
         with:
