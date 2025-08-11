@@ -82,7 +82,7 @@ jobs:
         run: git submodule update --init --depth 1
       - name: Build all kernels and aggregate artifacts
         run: |
-          ./build.sh --versions "6.13" --targets "armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64" --kernel-devel
+          ./build.sh --versions "6.13" --targets "armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpcle powerpc64 powerpc64le loongarch64 riscv64 x86_64" --kernel-devel
       - name: Create and publish release
         uses: softprops/action-gh-release@v1
         with:
