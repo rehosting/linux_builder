@@ -240,9 +240,7 @@ jobs:
         run: |
           mkdir -p kernel-devel-all
           for archive in $(find extracted-kernels -name "kernel-devel-all.tar.gz"); do
-            archver=$(dirname "$archive" | xargs basename)
-            mkdir -p kernel-devel-all/$archver
-            tar -xzf "$archive" -C kernel-devel-all/$archver
+            tar -xzf "$archive" -C kernel-devel-all
           done
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
 
