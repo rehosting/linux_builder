@@ -31,7 +31,12 @@ source /app/versions.conf
 get_supported_targets() {
     local version="$1"
     local exclude_var="KERNEL_${version//./_}_EXCLUDE"
-    local exclude_list="${!exclude_var}"
+    local exclude_list=""
+
+    # Safely get the exclude list (handle case where variable doesn't exist)
+    if [[ -n "${!exclude_var+x}" ]]; then
+        exclude_list="${!exclude_var}"
+    fi
 
     if [ -z "$exclude_list" ]; then
         # No exclusions, support all targets
@@ -55,7 +60,6 @@ get_supported_targets() {
     fi
 }
 
-# Function to apply IGLOO patches
 apply_igloo_patches() {
     local version=$1
     local kernel_dir="/app/build/$version"
