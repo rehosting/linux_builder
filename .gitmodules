@@ -6,3 +6,6 @@
 	path = linux/6.13
 	url = https://github.com/rehosting/linux.git
 	branch = main_6.7
+[submodule "igloo_base"]
+	path = igloo_base
+	url = https://github.com/rehosting/igloo_base.git
