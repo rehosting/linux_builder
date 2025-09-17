@@ -77,6 +77,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 docker build -t pandare/kernel_builder .
+
+# Ensure igloo_base is available (as submodule or sibling directory)
+if [ ! -d "igloo_base" ]; then
+    if [ -d "../igloo_base" ]; then
+        echo "Using igloo_base from ../igloo_base"
+        ln -sf ../igloo_base igloo_base
+    else
+        echo "Error: igloo_base not found. Expected as submodule or ../igloo_base"
+        echo "Maybe you need to do a git submodule update --init --recursive"
+        exit 1
+    fi
+fi
+
 mkdir -p cache
 
 docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"

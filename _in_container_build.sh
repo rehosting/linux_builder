@@ -24,6 +24,48 @@ echo "diffdefconfig: $DIFFDEFCONFIG"
 # Array to keep track of child processes
 declare -a pids
 
+# Function to apply IGLOO patches
+apply_igloo_patches() {
+    local version=$1
+    local kernel_dir="/app/linux/$version"
+
+    echo "Applying IGLOO patches for version $version..."    # Copy IGLOO driver and filesystem
+    if [ -d "/app/igloo_base/drivers/igloobase" ]; then
+        echo "  Copying igloobase driver..."
+        cp -r /app/igloo_base/drivers/igloobase "$kernel_dir/drivers/"
+    fi
+
+    if [ -d "/app/igloo_base/fs/hyperfs" ]; then
+        echo "  Copying hyperfs filesystem..."
+        cp -r /app/igloo_base/fs/hyperfs "$kernel_dir/fs/"
+    fi
+
+    # Apply patches if they exist for this version
+    local patches_dir="/app/igloo_base/patches/$version"
+    if [ -d "$patches_dir" ]; then
+        echo "  Applying patches for version $version..."
+        cd "$kernel_dir"
+
+        # Apply patches in dependency order
+        for subsystem in include arch drivers fs kernel mm net; do
+            if [ -d "$patches_dir/$subsystem" ]; then
+                find "$patches_dir/$subsystem" -name "*.patch" -type f | sort | while read patch; do
+                    echo "    Applying $(basename "$patch")..."
+                    if patch -p1 < "$patch"; then
+                        echo "      ✅ Applied successfully"
+                    else
+                        echo "      ❌ Failed to apply $patch"
+                        echo "      This may require manual intervention"
+                    fi
+                done
+            fi
+        done
+        cd - > /dev/null
+    else
+        echo "  No patches found for version $version (looked in $patches_dir)"
+    fi
+}
+
 # Set this to update defconfigs instead of building kernel
 
 get_cc() {
@@ -60,6 +102,9 @@ get_cc() {
 }
 
 for VERSION in $VERSIONS; do
+    # Apply IGLOO patches once per version
+    apply_igloo_patches "$VERSION"
+
 for TARGET in $TARGETS; do
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
