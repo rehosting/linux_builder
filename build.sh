@@ -142,4 +142,11 @@ setup_worktrees() {
 setup_worktrees
 
 mkdir -p cache
-docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"
+
+# Use -it if we're in an interactive terminal (for ctrl+c)
+DOCKER_OPTS="--rm -v $PWD/cache:/tmp/build -v $PWD:/app"
+if [ -t 0 ] && [ -t 1 ]; then
+    DOCKER_OPTS="-it $DOCKER_OPTS"
+fi
+
+docker run $DOCKER_OPTS pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"
