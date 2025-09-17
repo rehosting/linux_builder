@@ -21,15 +21,13 @@ EXAMPLES
 EOF
 }
 
+# Load version configuration
+source ./versions.conf
+
 # Default options
 CONFIG_ONLY=false
-#VERSIONS="4.10 6.7"
-VERSIONS="4.10"
-TARGETS="armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpcle powerpc64 powerpc64le loongarch64 riscv64 x86_64"
-NO_STRIP=false
-MENU_CONFIG=false
-INTERACTIVE=
-DIFFDEFCONFIG=false
+VERSIONS="$SUPPORTED_VERSIONS"
+TARGETS="$ALL_TARGETS"
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -51,23 +49,10 @@ while [[ $# -gt 0 ]]; do
             shift # past flag
             shift # past value
             ;;
-        --no-strip)
-            NO_STRIP=true
-            shift # past flag
-            ;;
-        --menuconfig)
-            MENU_CONFIG=true
-            INTERACTIVE=-it
-            shift # past flag
-            ;;
         --targets)
             TARGETS="$2"
             shift # past flag
             shift # past value
-            ;;
-        --diffdefconfig)
-            DIFFDEFCONFIG=true
-            shift
             ;;
         *)
             help
@@ -90,6 +75,49 @@ if [ ! -d "igloo_base" ]; then
     fi
 fi
 
-mkdir -p cache
+# Get supported targets for a kernel version (filtering excludes)
+get_supported_targets() {
+    local version="$1"
+    local exclude_var="KERNEL_${version//./_}_EXCLUDE"
+    local exclude_list="${!exclude_var}"
 
-docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG"
+    if [ -z "$exclude_list" ]; then
+        # No exclusions, support all targets
+        echo "$ALL_TARGETS"
+    else
+        # Filter out excluded targets
+        local supported=""
+        for target in $ALL_TARGETS; do
+            local excluded=false
+            for exclude in $exclude_list; do
+                if [ "$target" = "$exclude" ]; then
+                    excluded=true
+                    break
+                fi
+            done
+            if [ "$excluded" = false ]; then
+                supported="$supported $target"
+            fi
+        done
+        echo "$supported" | xargs  # trim whitespace
+    fi
+}
+
+# Setup git worktrees for each version
+setup_worktrees() {
+    for version in $VERSIONS; do
+        worktree_dir="build/$version"
+        commit_var="KERNEL_${version//./_}_COMMIT"
+        commit="${!commit_var}"
+
+        if [ ! -d "$worktree_dir" ]; then
+            echo "Creating worktree for $version at $commit"
+            cd linux && git worktree add "../$worktree_dir" "$commit" && cd ..
+        fi
+    done
+}
+
+setup_worktrees
+
+mkdir -p cache
+docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS"

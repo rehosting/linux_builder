@@ -2,7 +2,7 @@
 
 set -eu
 
-# We want to build linux for each of our targets and versions using the config files. Linux is in /app/linux/[version]
+# We want to build linux for each of our targets and versions using the config files. Linux is in /app/build/[version]
 # while our configs are at configs/[version]/[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries
 
@@ -24,10 +24,41 @@ echo "diffdefconfig: $DIFFDEFCONFIG"
 # Array to keep track of child processes
 declare -a pids
 
+# Load version configuration
+source /app/versions.conf
+
+# Get supported targets for a kernel version (filtering excludes)
+get_supported_targets() {
+    local version="$1"
+    local exclude_var="KERNEL_${version//./_}_EXCLUDE"
+    local exclude_list="${!exclude_var}"
+
+    if [ -z "$exclude_list" ]; then
+        # No exclusions, support all targets
+        echo "$ALL_TARGETS"
+    else
+        # Filter out excluded targets
+        local supported=""
+        for target in $ALL_TARGETS; do
+            local excluded=false
+            for exclude in $exclude_list; do
+                if [ "$target" = "$exclude" ]; then
+                    excluded=true
+                    break
+                fi
+            done
+            if [ "$excluded" = false ]; then
+                supported="$supported $target"
+            fi
+        done
+        echo "$supported" | xargs  # trim whitespace
+    fi
+}
+
 # Function to apply IGLOO patches
 apply_igloo_patches() {
     local version=$1
-    local kernel_dir="/app/linux/$version"
+    local kernel_dir="/app/build/$version"
 
     echo "Applying IGLOO patches for version $version..."    # Copy IGLOO driver and filesystem
     if [ -d "/app/igloo_base/drivers/igloobase" ]; then
@@ -105,7 +136,11 @@ for VERSION in $VERSIONS; do
     # Apply IGLOO patches once per version
     apply_igloo_patches "$VERSION"
 
-for TARGET in $TARGETS; do
+    # Get supported targets for this version
+    VERSION_TARGETS=$(get_supported_targets "$VERSION")
+    echo "Building version $VERSION for targets: $VERSION_TARGETS"
+
+for TARGET in $VERSION_TARGETS; do
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
         BUILD_TARGETS="vmlinux zImage"
@@ -151,22 +186,22 @@ for TARGET in $TARGETS; do
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      make -C /app/build/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      make -C /app/build/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
       if $MENU_CONFIG; then
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
+        make -C /app/build/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
         exit
       elif $DIFFDEFCONFIG; then
         cp /tmp/build/${VERSION}/${TARGET}/.config /tmp/original_config
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
-        /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
+        make -C /app/build/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
+        /app/build/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C /app/build/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 
@@ -238,7 +273,7 @@ if ! $CONFIG_ONLY; then
     )
 
     for file in "${copy_files[@]}"; do
-        src_path="/app/linux/$VERSION/$file"
+        src_path="/app/build/$VERSION/$file"
         if [ -f "$src_path" ]; then
             cp "$src_path" /kernels/$VERSION/includes/
         fi
