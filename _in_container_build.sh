@@ -129,53 +129,62 @@ for TARGET in $TARGETS; do
 
       mkdir -p /kernels/$VERSION
 
-      # Copy out zImage (if present) and vmlinux (always)
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/zImage" /kernels/$VERSION/zImage.${TARGET}
+      # Copy only the required boot artifact per architecture
+      BOOT_SRC=""
+      BOOT_DST=""
+      case "$TARGET" in
+        armel)
+          BOOT_SRC="arch/arm/boot/zImage"; BOOT_DST="zImage.${TARGET}" ;;
+        arm64)
+          BOOT_SRC="arch/arm64/boot/Image.gz"; BOOT_DST="zImage.${TARGET}" ;;
+        x86_64)
+          BOOT_SRC="arch/x86/boot/bzImage"; BOOT_DST="bzImage.${TARGET}" ;;
+        loongarch64)
+          BOOT_SRC="arch/loongarch/boot/vmlinuz.efi"; BOOT_DST="vmlinuz.efi.${TARGET}" ;;
+        riscv64|riscv32)
+          BOOT_SRC="arch/riscv/boot/Image"; BOOT_DST="Image.${TARGET}" ;;
+        *)
+          BOOT_SRC=""; BOOT_DST="" ;;
+      esac
+      if [ -n "$BOOT_SRC" ]; then
+        if [ -f "/tmp/build/${VERSION}/${TARGET}/${BOOT_SRC}" ]; then
+          cp "/tmp/build/${VERSION}/${TARGET}/${BOOT_SRC}" "/kernels/$VERSION/${BOOT_DST}"
+        else
+          echo "Warning: Expected boot artifact not found: ${BOOT_SRC} for ${TARGET}"
+        fi
       fi
 
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/bzImage" /kernels/$VERSION/bzImage.${TARGET}
-      fi
-      
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image" /kernels/$VERSION/Image.${TARGET}
-      fi
-      
-      # Copy out Image.gz (if present) 
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/Image.gz" /kernels/$VERSION/zImage.${TARGET}
-      fi
-      
-      # Copy out vmlinuz.efi (if present)
-      if [ -f "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" ]; then
-          cp "/tmp/build/${VERSION}/${TARGET}/arch/${short_arch}/boot/vmlinuz.efi" /kernels/$VERSION/vmlinuz.efi.${TARGET}
-      fi
-      
+      # vmlinux is needed for analysis, but only shipped if it is the deliverable (mips*/powerpc*)
+      VMLINUX_SRC="/tmp/build/${VERSION}/${TARGET}/vmlinux"
+      DELIVER_VMLINUX=false
+      case "$TARGET" in
+        mips*|powerpc*|powerpcle|powerpc64*|powerpc64le)
+          DELIVER_VMLINUX=true
+          ;;
+      esac
+
     #  Launch kernel processing in subprocess
       time (
-          # Former "start here" section
-          cp "/tmp/build/${VERSION}/${TARGET}/vmlinux" /kernels/$VERSION/vmlinux.${TARGET}
-
-          # Generate OSI profile
+          # Generate OSI/COSI from build-tree vmlinux
           echo "[${TARGET}]" >> /kernels/$VERSION/osi.${TARGET}.config
           /extract_kernelinfo/run.sh \
-            /kernels/$VERSION/vmlinux.${TARGET} /tmp/panda_profile.${TARGET}
+            "${VMLINUX_SRC}" /tmp/panda_profile.${TARGET}
           cat /tmp/panda_profile.${TARGET} >> /kernels/$VERSION/osi.${TARGET}.config
-          dwarf2json linux --elf /kernels/$VERSION/vmlinux.${TARGET} | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
-          
-          if ! $NO_STRIP; then
-            # strip vmlinux     
-            $(get_cc $TARGET)strip /kernels/$VERSION/vmlinux.${TARGET}
+          dwarf2json linux --elf "${VMLINUX_SRC}" | xz -c > /kernels/$VERSION/cosi.${TARGET}.json.xz
+
+          # If vmlinux is the boot artifact for this TARGET, copy and (optionally) strip it
+          if $DELIVER_VMLINUX; then
+            cp "${VMLINUX_SRC}" "/kernels/$VERSION/vmlinux.${TARGET}"
+            if ! $NO_STRIP; then
+              $(get_cc $TARGET)strip "/kernels/$VERSION/vmlinux.${TARGET}"
+            fi
           fi
-          # Former "end here" section
-          
+
           echo "Completed processing for $TARGET ($VERSION)"
       ) &
       # Store the PID of the background process
       pids+=($!)
-      
-      
+
       # Create minimal kernel-devel archive for module builds
       (
         KBUILD_DIR="/tmp/build/${VERSION}/${TARGET}"
