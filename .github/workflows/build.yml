@@ -83,6 +83,9 @@ jobs:
           set -eux
           BASE_REPO_DIR="/home/runner/_shared/linux"
           BASE_REPO_URL="https://github.com/rehosting/linux"
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          mkdir -p "$RUNS_DIR"
           # Clone bare base repo if missing
           if [ ! -d "$BASE_REPO_DIR" ]; then
             echo "Cloning bare base repo to $BASE_REPO_DIR"
@@ -100,7 +103,7 @@ jobs:
 
           # For each needed version, create a unique per-run clone and checkout correct revision
           for version in "${needed_versions[@]}"; do
-            CLONE_DIR="/home/runner/_shared/linux-$version-$GITHUB_RUN_ID"
+            CLONE_DIR="$RUNS_DIR/linux-$version"
             if [ ! -d "$CLONE_DIR" ]; then
               echo "Cloning $version to $CLONE_DIR"
               git clone --reference "$BASE_REPO_DIR" "$BASE_REPO_DIR" "$CLONE_DIR"
@@ -122,7 +125,7 @@ jobs:
           done
 
           echo "Available kernel clones:"
-          ls -la /home/runner/_shared/
+          ls -la "$RUNS_DIR"
 
       - name: Find valid target/version combinations
         id: find_targets
@@ -194,7 +197,9 @@ jobs:
         run: |
             set -eux
             VERSION="${{ steps.extract.outputs.version }}"
-            CLONE_DIR="/home/runner/_shared/linux-$VERSION-$GITHUB_RUN_ID"
+            RUNS_PARENT="/home/runner/_shared/runs"
+            RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+            CLONE_DIR="$RUNS_DIR/linux-$VERSION"
             if [ ! -d "$CLONE_DIR" ]; then
               echo "Kernel clone $CLONE_DIR not found!"
               exit 1
@@ -310,3 +315,11 @@ jobs:
             kernel-devel-all.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
+
+      - name: Cleanup per-run kernel clones
+        if: always()
+        run: |
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          echo "Cleaning up kernel clones in $RUNS_DIR"
+          rm -rf "$RUNS_DIR"
