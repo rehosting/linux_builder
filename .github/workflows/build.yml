@@ -271,8 +271,3 @@ jobs:
           RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
           echo "Cleaning up kernel clones in $RUNS_DIR"
           rm -rf "$RUNS_DIR"
-        run: |
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          echo "Cleaning up kernel clones in $RUNS_DIR"
-          rm -rf "$RUNS_DIR"
