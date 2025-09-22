@@ -57,7 +57,7 @@ jobs:
           VERSIONS_SET=()
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
-            VERSIONS_SET+=("$version")
+            VERSIONS_SET+=("\"$version\"")
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
@@ -65,13 +65,13 @@ jobs:
               fi
             done
           done
-          # Remove duplicates and output as JSON arrays
-          TARGETS=$(IFS=,; echo "[${TARGET_SET[*]}]")
-          VERSIONS=$(IFS=,; echo "[${VERSIONS_SET[*]}]")
-          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
-          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
-          echo "Found valid targets: $TARGETS"
-          echo "Found valid versions: $VERSIONS"
+          # Remove duplicates and create proper JSON arrays
+          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | paste -sd,)
+          UNIQUE_VERSIONS=$(printf "%s\n" "${VERSIONS_SET[@]}" | sort -u | paste -sd,)
+          echo "targets=[$UNIQUE_TARGETS]" >> $GITHUB_OUTPUT
+          echo "versions=[$UNIQUE_VERSIONS]" >> $GITHUB_OUTPUT
+          echo "Found valid targets: [$UNIQUE_TARGETS]"
+          echo "Found valid versions: [$UNIQUE_VERSIONS]"
 
   build:
     needs: prebuild
@@ -266,6 +266,11 @@ jobs:
 
       - name: Cleanup per-run kernel clones
         if: always()
+        run: |
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          echo "Cleaning up kernel clones in $RUNS_DIR"
+          rm -rf "$RUNS_DIR"
         run: |
           RUNS_PARENT="/home/runner/_shared/runs"
           RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
