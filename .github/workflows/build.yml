@@ -135,6 +135,17 @@ jobs:
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
       
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
+          buildkitd-config-inline: |
+            [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
+              insecure = true
+              http = true
+      
       - name: Build kernel_builder docker image
         uses: docker/build-push-action@v6
         with:
