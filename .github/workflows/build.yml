@@ -61,7 +61,7 @@ jobs:
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
-                TARGETS_SET+=("$target")
+                TARGETS_SET+=("\"$target\"")
               fi
             done
           done
@@ -81,7 +81,7 @@ jobs:
     strategy:
       max-parallel: 8
       matrix:
-        target_version: ${{ fromJSON(needs.prebuild.outputs.matrix) }}
+        target_version: ${{ fromJSON(needs.prebuild.outputs.targets) }}
 
     steps:
       - uses: actions/checkout@v4
