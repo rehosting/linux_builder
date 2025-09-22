@@ -46,15 +46,12 @@ jobs:
           # Always fetch latest from upstream
           git --git-dir="$BASE_REPO_DIR" fetch --all
 
-
-          echo "Available kernel clones:"
-          ls -la "$RUNS_DIR"
-
       - name: Find valid targets and versions sets
         id: find_targets
         run: |
           TARGETS_SET=()
           VERSIONS_SET=()
+          GITHUB_OUTPUT=/dev/null
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
             VERSIONS_SET+=("\"$version\"")
@@ -66,12 +63,14 @@ jobs:
             done
           done
           # Remove duplicates and create proper JSON arrays
-          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | paste -sd,)
-          UNIQUE_VERSIONS=$(printf "%s\n" "${VERSIONS_SET[@]}" | sort -u | paste -sd,)
-          echo "targets=[$UNIQUE_TARGETS]" >> $GITHUB_OUTPUT
-          echo "versions=[$UNIQUE_VERSIONS]" >> $GITHUB_OUTPUT
-          echo "Found valid targets: [$UNIQUE_TARGETS]"
-          echo "Found valid versions: [$UNIQUE_VERSIONS]"
+          UNIQUE_TARGETS=$(printf "%s", "${TARGETS_SET[@]}")
+          UNIQUE_VERSIONS=$(printf "%s", "${VERSIONS_SET[@]}")
+          TARGETS_OUTPUT="targets=[${UNIQUE_TARGETS::-1}]"
+          VERSIONS_OUTPUT="versions=[${UNIQUE_VERSIONS::-1}]"
+          echo "$TARGET$_OUTPUT" >> $GITHUB_OUTPUT
+          echo "$VERSIONS_OUTPUT" >> $GITHUB_OUTPUT
+          echo "Found valid targets: $TARGETS_OUTPUT"
+          echo "Found valid versions: $VERSIONS_OUTPUT"
 
   build:
     needs: prebuild
@@ -92,12 +91,9 @@ jobs:
       - name: Extract target and version
         id: extract
         run: |
-          TARGET_VERSION="${{ matrix.target_version }}"
-          TARGET="${TARGET_VERSION%@*}"
-          VERSION="${TARGET_VERSION#*@}"
+          TARGET="${{ matrix.target_version }}"
           echo "target=$TARGET" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building target: $TARGET, version: $VERSION"
+          echo "Building target: $TARGET"
 
       - name: Trust Harbor's self-signed certificate
         run: |
@@ -150,7 +146,6 @@ jobs:
       - name: Build Kernel for ${{ steps.extract.outputs.target }}
         run: |
             set -eux
-            VERSION="${{ steps.extract.outputs.version }}"
             TARGET="${{ steps.extract.outputs.target }}"
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_REPO_URL="https://github.com/rehosting/linux"
@@ -158,16 +153,16 @@ jobs:
             # Update .gitmodules to use local bare repo
             sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
             
-            # Initialize and update submodules for the specific version
-            git submodule update --init --depth 1 linux/$VERSION
+            # Initialize and update submodules for all versions
+            git submodule update --init --depth 1
 
             mkdir -p cache
             ./build.sh --targets "$TARGET" --kernel-devel
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.${VERSION}.tar.gz
+            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
       - name: Push build artifact to registry with oras
         run: |
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ steps.extract.outputs.target }}-${{ steps.extract.outputs.version }} build-output-${{ steps.extract.outputs.target }}.${{ steps.extract.outputs.version }}.tar.gz:application/gzip
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ steps.extract.outputs.target }} build-output-${{ steps.extract.outputs.target }}.tar.gz:application/gzip
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
