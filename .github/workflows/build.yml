@@ -66,12 +66,12 @@ jobs:
             done
           done
           # Remove duplicates and output as JSON arrays
-          UNIQUE_TARGETS=$(printf "%s," "${TARGETS_SET[@]}" | sort -u | jq -R . | jq -s .)
-          UNIQUE_VERSIONS=$(printf "%s," "${VERSIONS_SET[@]}" | sort -u | jq -R . | jq -s .)
-          echo "targets=$UNIQUE_TARGETS" >> $GITHUB_OUTPUT
-          echo "versions=$UNIQUE_VERSIONS" >> $GITHUB_OUTPUT
-          echo "Found valid targets: $UNIQUE_TARGETS"
-          echo "Found valid versions: $UNIQUE_VERSIONS"
+          TARGETS=$(IFS=,; echo "[${TARGET_SET[*]}]")
+          VERSIONS=$(IFS=,; echo "[${VERSIONS_SET[*]}]")
+          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+          echo "Found valid targets: $TARGETS"
+          echo "Found valid versions: $VERSIONS"
 
   build:
     needs: prebuild
