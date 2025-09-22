@@ -118,7 +118,7 @@ jobs:
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$ ]]; then
                 target=$(basename "$config_file")
-                COMBINATIONS+=("\"${target}.${version}\"")
+                COMBINATIONS+=("\"${target}@${version}\"")
               fi
             done
           done
@@ -140,8 +140,8 @@ jobs:
         id: extract
         run: |
           TARGET_VERSION="${{ matrix.target_version }}"
-          TARGET="${TARGET_VERSION%.*}"
-          VERSION="${TARGET_VERSION##*.}"
+          TARGET="${TARGET_VERSION%@*}"
+          VERSION="${TARGET_VERSION#*@}"
           echo "target=$TARGET" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building target: $TARGET, version: $VERSION"
