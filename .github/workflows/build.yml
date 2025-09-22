@@ -46,55 +46,32 @@ jobs:
           # Always fetch latest from upstream
           git --git-dir="$BASE_REPO_DIR" fetch --all
 
-          # Find all needed kernel versions from configs
-          needed_versions=()
-          for version_dir in configs/*/; do
-            version=$(basename "$version_dir")
-            needed_versions+=("$version")
-          done
-
-          # For each needed version, create a unique per-run clone and checkout correct revision
-          for version in "${needed_versions[@]}"; do
-            CLONE_DIR="$RUNS_DIR/linux-$version"
-            if [ ! -d "$CLONE_DIR" ]; then
-              echo "Cloning $version to $CLONE_DIR"
-              git clone --reference "$BASE_REPO_DIR" "$BASE_REPO_DIR" "$CLONE_DIR"
-            fi
-
-            # Get submodule path and revision from .gitmodules and ls-tree
-            SUBMODULE_PATH="linux/$version"
-            SUBMODULE_REV=$(git ls-tree HEAD "$SUBMODULE_PATH" | awk '{print $3}')
-            if [ -z "$SUBMODULE_REV" ]; then
-              echo "No submodule revision found for $SUBMODULE_PATH"
-              continue
-            fi
-
-            # Checkout the correct revision
-            cd "$CLONE_DIR"
-            git fetch --all
-            git checkout "$SUBMODULE_REV"
-            cd -
-          done
 
           echo "Available kernel clones:"
           ls -la "$RUNS_DIR"
 
-      - name: Find valid target/version combinations
+      - name: Find valid targets and versions sets
         id: find_targets
         run: |
-          COMBINATIONS=()
+          TARGETS_SET=()
+          VERSIONS_SET=()
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
+            VERSIONS_SET+=("$version")
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
-                COMBINATIONS+=("\"${target}@${version}\"")
+                TARGETS_SET+=("$target")
               fi
             done
           done
-          MATRIX=$(IFS=,; echo "[${COMBINATIONS[*]}]")
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "Found valid combinations: $MATRIX"
+          # Remove duplicates and output as JSON arrays
+          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | jq -R . | jq -s .)
+          UNIQUE_VERSIONS=$(printf "%s\n" "${VERSIONS_SET[@]}" | sort -u | jq -R . | jq -s .)
+          echo "targets=$UNIQUE_TARGETS" >> $GITHUB_OUTPUT
+          echo "versions=$UNIQUE_VERSIONS" >> $GITHUB_OUTPUT
+          echo "Found valid targets: $UNIQUE_TARGETS"
+          echo "Found valid versions: $UNIQUE_VERSIONS"
 
   build:
     needs: prebuild
@@ -175,16 +152,17 @@ jobs:
             set -eux
             VERSION="${{ steps.extract.outputs.version }}"
             TARGET="${{ steps.extract.outputs.target }}"
-            RUNS_PARENT="/home/runner/_shared/runs"
-            RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-            CLONE_DIR="$RUNS_DIR/linux-$VERSION"
-            if [ ! -d "$CLONE_DIR" ]; then
-              echo "Kernel clone $CLONE_DIR not found!"
-              exit 1
-            fi
+            BASE_REPO_DIR="/home/runner/_shared/linux"
+            BASE_REPO_URL="https://github.com/rehosting/linux"
+
+            # Update .gitmodules to use local bare repo
+            sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
+            
+            # Initialize and update submodules for the specific version
+            git submodule update --init --depth 1 linux/$VERSION
 
             mkdir -p cache
-            ./build.sh --versions "$VERSION" --targets "$TARGET" --kernel-devel --extra-docker-opts "-v $CLONE_DIR:/app/linux/$VERSION:ro"
+            ./build.sh --targets "$TARGET" --kernel-devel
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.${VERSION}.tar.gz
 
       - name: Push build artifact to registry with oras
