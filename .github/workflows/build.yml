@@ -150,6 +150,7 @@ jobs:
     if: github.event.pull_request.draft == false
 
     strategy:
+      max-parallel: 8
       matrix:
         target_version: ${{ fromJSON(needs.prebuild.outputs.matrix) }}
 
