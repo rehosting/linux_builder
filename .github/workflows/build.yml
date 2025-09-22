@@ -93,6 +93,8 @@ jobs:
           TARGET="${{ matrix.target_version }}"
           echo "target=$TARGET" >> $GITHUB_OUTPUT
           echo "Building target: $TARGET"
+          VERSIONS="${{ fromJSON(needs.prebuild.outputs.versions) }}"
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
 
       - name: Trust Harbor's self-signed certificate
         run: |
@@ -142,21 +144,22 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y pigz
 
-      - name: Build Kernel for ${{ steps.extract.outputs.target }}
+      - name: Build Kernel for ${{ steps.extract.outputs.tlarget }}
         run: |
             set -eux
             TARGET="${{ steps.extract.outputs.target }}"
+            VERSIONS="${{ steps.extract.outputs.versions }}"
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_REPO_URL="https://github.com/rehosting/linux"
 
             # Update .gitmodules to use local bare repo
             sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
             
-            # Initialize and update submodules for all versions, allowing file protocol
-            GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1
+            # Initialize and update submodules for all versions
+            git submodule update --init --depth 1
 
             mkdir -p cache
-            ./build.sh --targets "$TARGET" --kernel-devel
+            ./build.sh --targets "$TARGET" --versions "$VERSIONS" --kernel-devel
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
       - name: Push build artifact to registry with oras
