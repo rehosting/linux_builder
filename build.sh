@@ -18,6 +18,7 @@ EXAMPLES
 	./build.sh --versions 4.10
 	./build.sh --targets armel
 	./build.sh
+	./build.sh --extra-docker-opts "--cpus=2"
 EOF
 }
 
@@ -31,6 +32,8 @@ MENU_CONFIG=false
 INTERACTIVE=
 DIFFDEFCONFIG=false
 KERNEL_DEVEL=true
+IMAGE="rehosting/linux_builder"
+EXTRA_DOCKER_OPTS=""
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -74,6 +77,16 @@ while [[ $# -gt 0 ]]; do
             KERNEL_DEVEL=true
             shift
             ;;
+        --image)
+            IMAGE="$2"
+            shift # past flag
+            shift # past value
+            ;;
+        --extra-docker-opts)
+            EXTRA_DOCKER_OPTS="$2"
+            shift # past flag
+            shift # past value
+            ;;
         *)
             help
             exit 1
@@ -81,7 +94,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-docker build -t pandare/kernel_builder .
+# Check if the image exists locally, build if not
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "Docker image $IMAGE not found, building it..."
+    docker build -t "$IMAGE" .
+fi
+
 mkdir -p cache
 
-docker run $INTERACTIVE --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder bash /app/_in_container_build.sh "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG" "$KERNEL_DEVEL"
+docker run $INTERACTIVE \
+    --rm -v $PWD/cache:/tmp/build \
+    -v $PWD:/app \
+    $EXTRA_DOCKER_OPTS \
+    "$IMAGE" \
+    bash /app/_in_container_build.sh \
+    "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" \
+    "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG" "$KERNEL_DEVEL"
