@@ -94,8 +94,14 @@ for TARGET in $TARGETS; do
     echo "Building $BUILD_TARGETS for $TARGET"
 
     if [ ! -f "/app/configs/${VERSION}/${TARGET}" ]; then
-        echo "No config for $TARGET"
+        echo "No config for $TARGET" avaiable for version $VERSION.
+        # Only exit if there is a single version being built
+        if [ "$(echo $VERSIONS | wc -w)" -eq 1 ]; then
+            echo "Since only one version is being built, exiting."
         exit 1
+        fi
+        echo "Assuming this is fine in multi-version builds, skipping."
+        continue
     fi
     mkdir -p "/tmp/build/${VERSION}/${TARGET}"
     cpp -P -undef "/app/configs/${VERSION}/${TARGET}" -o "/tmp/build/${VERSION}/${TARGET}/.config"
