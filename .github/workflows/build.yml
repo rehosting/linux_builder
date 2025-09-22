@@ -186,7 +186,7 @@ jobs:
       - name: Pull prebuilt image
         run: |
           docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.run_id }}
-          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.run_id }} rehosting/linux_builder:${{ github.run_id }}
+          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.run_id }} rehosting/linux_builder:latest
 
       - uses: oras-project/setup-oras@v1.2.3
 
@@ -198,6 +198,7 @@ jobs:
         run: |
             set -eux
             VERSION="${{ steps.extract.outputs.version }}"
+            TARGET="${{ steps.extract.outputs.target }}"
             RUNS_PARENT="/home/runner/_shared/runs"
             RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
             CLONE_DIR="$RUNS_DIR/linux-$VERSION"
@@ -207,17 +208,8 @@ jobs:
             fi
 
             mkdir -p cache
-            docker run --rm \
-              -v $PWD/cache:/tmp/build \
-              -v $PWD/configs:/app/configs:ro \
-              -v $PWD/_in_container_build.sh:/app/_in_container_build.sh:ro \
-              -v $CLONE_DIR:/app/linux/${VERSION}:ro \
-              -w /app \
-              ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.run_id }} \
-              bash -c "./_in_container_build.sh false ${VERSION} ${{ steps.extract.outputs.target }} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
-            mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
-            mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ steps.extract.outputs.target }}.${VERSION}.tar.gz
+            ./build.sh --versions "$VERSION" --targets "$TARGET" --kernel-devel --extra-docker-opts "-v $CLONE_DIR:/app/linux/$VERSION:ro"
+            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.${VERSION}.tar.gz
 
       - name: Push build artifact to registry with oras
         run: |
