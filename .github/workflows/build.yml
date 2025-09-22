@@ -67,7 +67,7 @@ jobs:
           UNIQUE_VERSIONS=$(printf "%s", "${VERSIONS_SET[@]}")
           TARGETS_OUTPUT="targets=[${UNIQUE_TARGETS::-1}]"
           VERSIONS_OUTPUT="versions=[${UNIQUE_VERSIONS::-1}]"
-          echo "$TARGET$_OUTPUT" >> $GITHUB_OUTPUT
+          echo "$TARGETS_OUTPUT" >> $GITHUB_OUTPUT
           echo "$VERSIONS_OUTPUT" >> $GITHUB_OUTPUT
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
