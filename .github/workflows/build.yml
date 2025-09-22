@@ -78,36 +78,51 @@ jobs:
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache,mode=max
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:cache-PR-${{ github.event.number }}
 
-      - name: Create ephemeral Dockerfile
+      - name: Setup shared Linux kernel sources
         run: |
-          cat <<EOF > Dockerfile.linux_builder
-          FROM ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
-          COPY . /linux_builder
-          RUN ln -s /linux_builder /app
-          WORKDIR /app
-          EOF
+          set -eux
+          BASE_REPO_DIR="/home/runner/_shared/linux"
+          BASE_REPO_URL="https://github.com/rehosting/linux"
+          # Clone bare base repo if missing
+          if [ ! -d "$BASE_REPO_DIR" ]; then
+            echo "Cloning bare base repo to $BASE_REPO_DIR"
+            git clone --bare "$BASE_REPO_URL" "$BASE_REPO_DIR"
+          fi
+          # Always fetch latest from upstream
+          git --git-dir="$BASE_REPO_DIR" fetch --all
 
-      - name: Update submodules
-        run: git submodule update --init --depth 1
-      
-      # no longer pushing to dockerhub since harbor replicates for us
-      - name: Build Docker image and push to harbor
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.linux_builder
-          push: true
-          tags: |
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ github.ref_name }}
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:latest
-          build-args: |
-            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-          cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:cache-PR-${{github.event.number}},mode=max
-          cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache-PR-${{ github.event.number }}
+          # Find all needed kernel versions from configs
+          needed_versions=()
+          for version_dir in configs/*/; do
+            version=$(basename "$version_dir")
+            needed_versions+=("$version")
+          done
+
+          # For each needed version, create a unique per-run clone and checkout correct revision
+          for version in "${needed_versions[@]}"; do
+            CLONE_DIR="/home/runner/_shared/linux-$version-$GITHUB_RUN_ID"
+            if [ ! -d "$CLONE_DIR" ]; then
+              echo "Cloning $version to $CLONE_DIR"
+              git clone --reference "$BASE_REPO_DIR" "$BASE_REPO_DIR" "$CLONE_DIR"
+            fi
+
+            # Get submodule path and revision from .gitmodules and ls-tree
+            SUBMODULE_PATH="linux/$version"
+            SUBMODULE_REV=$(git ls-tree HEAD "$SUBMODULE_PATH" | awk '{print $3}')
+            if [ -z "$SUBMODULE_REV" ]; then
+              echo "No submodule revision found for $SUBMODULE_PATH"
+              continue
+            fi
+
+            # Checkout the correct revision
+            cd "$CLONE_DIR"
+            git fetch --all
+            git checkout "$SUBMODULE_REV"
+            cd -
+          done
+
+          echo "Available kernel clones:"
+          ls -la /home/runner/_shared/
 
       - name: Find valid target/version combinations
         id: find_targets
@@ -136,6 +151,11 @@ jobs:
         target_version: ${{ fromJSON(needs.prebuild.outputs.matrix) }}
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
       - name: Extract target and version
         id: extract
         run: |
@@ -172,13 +192,25 @@ jobs:
 
       - name: Build Kernel for ${{ steps.extract.outputs.target }}
         run: |
+            set -eux
+            VERSION="${{ steps.extract.outputs.version }}"
+            CLONE_DIR="/home/runner/_shared/linux-$VERSION-$GITHUB_RUN_ID"
+            if [ ! -d "$CLONE_DIR" ]; then
+              echo "Kernel clone $CLONE_DIR not found!"
+              exit 1
+            fi
+
             mkdir -p cache
-            docker run --rm -v $PWD/cache:/tmp/build \
-              rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ steps.extract.outputs.version }} ${{ steps.extract.outputs.target }} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
+            docker run --rm \
+              -v $PWD/cache:/tmp/build \
+              -v $PWD/configs:/app/configs:ro \
+              -v $PWD/_in_container_build.sh:/app/_in_container_build.sh:ro \
+              -v $CLONE_DIR:/app/linux/${VERSION}:ro \
+              ${{ secrets.REHOSTING_ARC_REGISTRY }}/pandare/kernel_builder:${{ github.ref_name }} \
+              bash -c "./_in_container_build.sh false ${VERSION} ${{ steps.extract.outputs.target }} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
             mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ steps.extract.outputs.target }}.${{ steps.extract.outputs.version }}.tar.gz
+            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ steps.extract.outputs.target }}.${VERSION}.tar.gz
 
       - name: Push build artifact to registry with oras
         run: |
@@ -276,5 +308,7 @@ jobs:
           files: |
             kernels-latest.tar.gz
             kernel-devel-all.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
