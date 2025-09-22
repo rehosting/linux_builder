@@ -67,8 +67,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/kernel_builder:${{ github.ref_name }}
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/kernel_builder:latest
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:${{ github.ref_name }}
+            ${{secrets.REHOSTING_ARC_REGISTRY}}/pandare/kernel_builder:latest
           build-args: |
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
           cache-from: |
@@ -185,8 +185,8 @@ jobs:
 
       - name: Pull prebuilt image
         run: |
-          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }}
-          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
+          docker pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/pandare/linux_builder:${{ github.ref_name }}
+          docker tag ${{ secrets.REHOSTING_ARC_REGISTRY }}/pandare/linux_builder:${{ github.ref_name }} rehosting/linux_builder:${{ github.ref_name }}
 
       - uses: oras-project/setup-oras@v1.2.3
 
