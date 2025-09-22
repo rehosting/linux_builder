@@ -86,7 +86,7 @@ jobs:
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
             for config_file in "$version_dir"*; do
-              if [[ -f "$config_file" && ! "$config_file" =~ \.inc$ ]]; then
+              if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
                 COMBINATIONS+=("\"${target}@${version}\"")
               fi
