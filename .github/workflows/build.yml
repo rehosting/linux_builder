@@ -152,8 +152,8 @@ jobs:
             # Update .gitmodules to use local bare repo
             sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
             
-            # Initialize and update submodules for all versions
-            git submodule update --init --depth 1
+            # Initialize and update submodules for all versions, allowing file protocol
+            GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1
 
             mkdir -p cache
             ./build.sh --targets "$TARGET" --kernel-devel
