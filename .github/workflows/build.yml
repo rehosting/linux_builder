@@ -15,7 +15,8 @@ jobs:
   prebuild:
     runs-on: rehosting-arc
     outputs:
-      matrix: ${{ steps.find_targets.outputs.matrix }}
+      targets: ${{ steps.find_targets.outputs.targets }}
+      versions: ${{ steps.find_targets.outputs.versions }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,7 +52,6 @@ jobs:
         run: |
           TARGETS_SET=()
           VERSIONS_SET=()
-          GITHUB_OUTPUT=/dev/null
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
             VERSIONS_SET+=("\"$version\"")
@@ -63,12 +63,12 @@ jobs:
             done
           done
           # Remove duplicates and create proper JSON arrays
-          UNIQUE_TARGETS=$(printf "%s", "${TARGETS_SET[@]}")
-          UNIQUE_VERSIONS=$(printf "%s", "${VERSIONS_SET[@]}")
-          TARGETS_OUTPUT="targets=[${UNIQUE_TARGETS::-1}]"
-          VERSIONS_OUTPUT="versions=[${UNIQUE_VERSIONS::-1}]"
-          echo "$TARGETS_OUTPUT" >> $GITHUB_OUTPUT
-          echo "$VERSIONS_OUTPUT" >> $GITHUB_OUTPUT
+          UNIQUE_TARGETS=$(printf "%s," "${TARGETS_SET[@]}" | sed 's/,$//')
+          UNIQUE_VERSIONS=$(printf "%s," "${VERSIONS_SET[@]}" | sed 's/,$//')
+          TARGETS_OUTPUT="[${UNIQUE_TARGETS}]"
+          VERSIONS_OUTPUT="[${UNIQUE_VERSIONS}]"
+          echo "targets=$TARGETS_OUTPUT" >> $GITHUB_OUTPUT
+          echo "versions=$VERSIONS_OUTPUT" >> $GITHUB_OUTPUT
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
 
