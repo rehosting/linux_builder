@@ -58,12 +58,12 @@ jobs:
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
-                TARGETS_SET+=("\"$target\"")
+                TARGETS_SET+=("$target")
               fi
             done
           done
-          # Remove duplicates and create proper JSON arrays
-          UNIQUE_TARGETS=$(printf "%s," "${TARGETS_SET[@]}" | sed 's/,$//')
+          # Sort and deduplicate targets, then quote for JSON
+          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | awk '{printf "\"%s\",", $0}' | sed 's/,$//')
           UNIQUE_VERSIONS=$(printf "%s," "${VERSIONS_SET[@]}" | sed 's/,$//')
           TARGETS_OUTPUT="[${UNIQUE_TARGETS}]"
           VERSIONS_OUTPUT="[${UNIQUE_VERSIONS}]"
