@@ -14,6 +14,8 @@ on:
 jobs:
   prebuild:
     runs-on: rehosting-arc
+    outputs:
+      matrix: ${{ steps.find_targets.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,19 +109,43 @@ jobs:
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache,mode=max
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/penguin:cache-PR-${{ github.event.number }}
 
+      - name: Find valid target/version combinations
+        id: find_targets
+        run: |
+          COMBINATIONS=()
+          for version_dir in configs/*/; do
+            version=$(basename "$version_dir")
+            for config_file in "$version_dir"*; do
+              if [[ -f "$config_file" && ! "$config_file" =~ \.inc$ ]]; then
+                target=$(basename "$config_file")
+                COMBINATIONS+=("\"${target}.${version}\"")
+              fi
+            done
+          done
+          MATRIX=$(IFS=,; echo "[${COMBINATIONS[*]}]")
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Found valid combinations: $MATRIX"
+
   build:
     needs: prebuild
-    # Only publish on tags. run git tag vX and git push origin vX
-    # runs-on: self-hosted
     runs-on: rehosting-arc
     if: github.event.pull_request.draft == false
 
     strategy:
       matrix:
-        target: [armel, arm64, mipsel, mipseb, mips64el, mips64eb, powerpc, powerpcle, powerpc64, powerpc64le, loongarch64, riscv64, x86_64]
-        version: ["4.10", "6.13"] # XXX: quotes are necessary, otherwise 4.10 -> 4.1
+        target_version: ${{ fromJSON(needs.prebuild.outputs.matrix) }}
 
     steps:
+      - name: Extract target and version
+        id: extract
+        run: |
+          TARGET_VERSION="${{ matrix.target_version }}"
+          TARGET="${TARGET_VERSION%.*}"
+          VERSION="${TARGET_VERSION##*.}"
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building target: $TARGET, version: $VERSION"
+
       - name: Trust Harbor's self-signed certificate
         run: |
           echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
@@ -144,19 +170,19 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y pigz
 
-      - name: Build Kernel for ${{ matrix.target }}
+      - name: Build Kernel for ${{ steps.extract.outputs.target }}
         run: |
             mkdir -p cache
             docker run --rm -v $PWD/cache:/tmp/build \
               rehosting/linux_builder:${{ github.ref_name }} \
-              bash -c "./_in_container_build.sh false ${{ matrix.version }} ${{ matrix.target}} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
+              bash -c "./_in_container_build.sh false ${{ steps.extract.outputs.version }} ${{ steps.extract.outputs.target }} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
             mv cache/kernel-devel-all.tar.gz kernel-devel-all.tar.gz
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz
+            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${{ steps.extract.outputs.target }}.${{ steps.extract.outputs.version }}.tar.gz
 
       - name: Push build artifact to registry with oras
         run: |
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ matrix.target }}-${{ matrix.version }} build-output-${{ matrix.target }}.${{ matrix.version }}.tar.gz:application/gzip
+          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ steps.extract.outputs.target }}-${{ steps.extract.outputs.version }} build-output-${{ steps.extract.outputs.target }}.${{ steps.extract.outputs.version }}.tar.gz:application/gzip
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
