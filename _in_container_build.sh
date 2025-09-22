@@ -98,7 +98,7 @@ for TARGET in $TARGETS; do
         # Only exit if there is a single version being built
         if [ "$(echo $VERSIONS | wc -w)" -eq 1 ]; then
             echo "Since only one version is being built, exiting."
-        exit 1
+            exit 1
         fi
         echo "Assuming this is fine in multi-version builds, skipping."
         continue
@@ -207,6 +207,8 @@ for TARGET in $TARGETS; do
         mkdir -p "$OUTDIR/arch/${short_arch}"
         cp -r "$KERNEL_SRC/arch/${short_arch}" "$OUTDIR/arch/" || true
         cp -r "$KBUILD_DIR/arch/${short_arch}" "$OUTDIR/arch/" || true
+        # Remove arch/${ARCH}/boot from OUTDIR
+        rm -rf "$OUTDIR/arch/${short_arch}/boot" || true
         if [ $short_arch == "x86_64" ]; then
           # MIPS has a different arch directory structure
           mkdir -p "$OUTDIR/arch/x86"
