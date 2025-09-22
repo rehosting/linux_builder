@@ -212,6 +212,7 @@ jobs:
               -v $PWD/configs:/app/configs:ro \
               -v $PWD/_in_container_build.sh:/app/_in_container_build.sh:ro \
               -v $CLONE_DIR:/app/linux/${VERSION}:ro \
+              -w /app \
               ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.run_id }} \
               bash -c "./_in_container_build.sh false ${VERSION} ${{ steps.extract.outputs.target }} false false false true && cp kernels-latest.tar.gz /tmp/build/kernels-latest.tar.gz && cp /app/kernel-devel-all.tar.gz /tmp/build/kernel-devel-all.tar.gz"
             mv cache/kernels-latest.tar.gz kernels-latest.tar.gz
