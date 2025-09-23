@@ -42,9 +42,10 @@ jobs:
           if [ ! -d "$BASE_REPO_DIR" ]; then
             echo "Cloning bare base repo to $BASE_REPO_DIR"
             git clone --bare "$BASE_REPO_URL" "$BASE_REPO_DIR"
+            cd $BASE_REPO_DIR && git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
           fi
           # Always fetch latest from upstream
-          git --git-dir="$BASE_REPO_DIR" fetch --all
+          git --git-dir="$BASE_REPO_DIR" fetch --mirror
 
       - name: Ensure linux cache exists
         run: |
