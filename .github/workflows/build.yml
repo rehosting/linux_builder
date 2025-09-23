@@ -45,7 +45,7 @@ jobs:
             cd $BASE_REPO_DIR && git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
           fi
           # Always fetch latest from upstream
-          git --git-dir="$BASE_REPO_DIR" fetch --mirror
+          git fetch origin --prune --tags --force
 
       - name: Ensure linux cache exists
         run: |
