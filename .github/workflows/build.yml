@@ -161,12 +161,6 @@ jobs:
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
           outputs: type=docker
 
-      - uses: oras-project/setup-oras@v1.2.3
-
-      - name: Install pigz for parallel compression
-        run: |
-          sudo apt-get update && sudo apt-get install -y pigz jq
-
       - name: Build Kernel for ${{ matrix.target_version }}
         run: |
             set -eux
@@ -179,13 +173,20 @@ jobs:
             RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
             RUNS_DIR_LINUX="$RUNS_DIR/linux"
 
+            # Convert JSON array to space-separated string
+            if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
+              VERSIONS=""
+            else
+              VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
+            fi
+
             ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $RUNS_DIR_LINUX:/app/linux"
-            tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
-      - name: Push build artifact to registry with oras
-        run: |
-          oras push ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:${{ steps.extract.outputs.target }} build-output-${{ steps.extract.outputs.target }}.tar.gz:application/gzip
-
+            BUILD_OUTPUT="$RUNS_DIR/build-output"
+            mkdir -p $BUILD_OUTPUT
+            mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
+            mv kernel-devel-all.tar.gz $BUILD_OUTPUT/kernel-devel-all-${TARGET}.tar.gz
+  
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
@@ -201,73 +202,62 @@ jobs:
           echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
           openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
           sudo update-ca-certificates
-      
       - name: Log in to Rehosting Arc Registry
         uses: docker/login-action@v3
         with:
           registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-      - uses: oras-project/setup-oras@v1.2.3
-
-      - name: Pull all build artifacts from registry with oras
-        run: |
-          mkdir -p downloaded-kernels
-          for target in armel arm64 mipsel mipseb mips64el mips64eb powerpc powerpc64 loongarch64 riscv64 x86_64; do
-            for version in 6.13; do
-              tag="$target-$version"
-              oras pull ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder_artifact:$tag -o downloaded-kernels || echo "No artifact for $tag"
-            done
-          done
-          echo "[DEBUG] Downloaded build artifacts:"
-          ls -lh downloaded-kernels
-
-      - name: Extract all build outputs
-        run: |
-          rm -rf extracted-kernels && mkdir extracted-kernels
-          for archive in $(find downloaded-kernels -name "build-output-*.tar.gz"); do
-            archver=$(basename "$archive" | sed 's/build-output-\(.*\)\.tar\.gz/\1/')
-            mkdir -p extracted-kernels/$archver
-            echo "[DEBUG] Extracting $archive to extracted-kernels/$archver"
-            tar -xzf "$archive" -C extracted-kernels/$archver
-          done
-          echo "[DEBUG] Extracted build outputs:"
-          find extracted-kernels
 
       - name: Combine all kernels into a single archive
         run: |
+          set -eux
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          BUILD_OUTPUT="$RUNS_DIR/build-output"
+
+          echo "[DEBUG] Listing available per-target kernel archives:"
+          find "$BUILD_OUTPUT" -maxdepth 1 -name "kernels-latest-*.tar.gz" -print || true
+
           rm -rf combined-kernels && mkdir combined-kernels
-          echo "[DEBUG] Found kernels-latest.tar.gz files:"
-          find extracted-kernels -name "kernels-latest.tar.gz"
-          # Recursively extract all kernels-latest.tar.gz archives for all architectures/versions
-          find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
+
+          for archive in "$BUILD_OUTPUT"/kernels-latest-*.tar.gz; do
+            [ -e "$archive" ] || continue
             echo "[DEBUG] Extracting $archive into combined-kernels"
             tar -xzf "$archive" -C combined-kernels
           done
+
           echo "[DEBUG] Contents of combined-kernels after extraction:"
-          find combined-kernels
+          find combined-kernels || true
 
-          # Combine OSI profiles for each kernel version
-          # otherwise the extracted kernel configs will clobber each other
-          if [ -d combined-kernels/kernels/4.10 ] ; then
-            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
-              tar -O -xf "$archive" "kernels/4.10/osi.config";
-            done > combined-kernels/kernels/4.10/osi.config
+          # Merge osi.config for every detected version directory
+          if [ -d combined-kernels/kernels ]; then
+            for vdir in combined-kernels/kernels/*; do
+              [ -d "$vdir" ] || continue
+              version=$(basename "$vdir")
+              echo "[DEBUG] Merging osi.config for version $version"
+              {
+                for archive in "$BUILD_OUTPUT"/kernels-latest-*.tar.gz; do
+                  [ -e "$archive" ] || continue
+                  tar -O -xf "$archive" "kernels/$version/osi.config" 2>/dev/null || true
+                done
+              } > "combined-kernels/kernels/$version/osi.config"
+            done
           fi
 
-          if [ -d combined-kernels/kernels/6.13 ] ; then
-            find extracted-kernels -name "kernels-latest.tar.gz" | while read archive; do
-              tar -O -xf "$archive" "kernels/6.13/osi.config";
-            done > combined-kernels/kernels/6.13/osi.config
-          fi
-
-          # Create a new single archive from the combined content
           tar -czvf kernels-latest.tar.gz -C combined-kernels .
 
       - name: Aggregate all kernel-devel artifacts
         run: |
+          set -eux
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          BUILD_OUTPUT="$RUNS_DIR/build-output"
+
           mkdir -p kernel-devel-all
-          for archive in $(find extracted-kernels -name "kernel-devel-all.tar.gz"); do
+          for archive in "$BUILD_OUTPUT"/kernel-devel-all-*.tar.gz; do
+            [ -e "$archive" ] || continue
+            echo "[DEBUG] Extracting $archive into kernel-devel-all/"
             tar -xzf "$archive" -C kernel-devel-all
           done
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
