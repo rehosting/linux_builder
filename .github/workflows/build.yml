@@ -126,7 +126,7 @@ jobs:
             rehosting/linux_builder:latest
           build-args: |
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-            TARGET=${{ steps.extract.outputs.target }}
+            TARGET=${{ matrix.target_version }}
           cache-from: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
           cache-to: |
@@ -139,10 +139,10 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y pigz jq
 
-      - name: Build Kernel for ${{ steps.extract.outputs.target }}
+      - name: Build Kernel for ${{ matrix.target_version }}
         run: |
             set -eux
-            TARGET="${{ steps.extract.outputs.target }}"
+            TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_REPO_URL="https://github.com/rehosting/linux"
