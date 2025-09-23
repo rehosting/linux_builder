@@ -54,7 +54,7 @@ jobs:
           VERSIONS_SET=()
           for version_dir in configs/*/; do
             version=$(basename "$version_dir")
-            VERSIONS_SET+=("\"$version\"")
+            VERSIONS_SET+=("$version")
             for config_file in "$version_dir"*; do
               if [[ -f "$config_file" && ! "$config_file" =~ \.inc$  && ! "$config_file" =~ \.unused$ ]]; then
                 target=$(basename "$config_file")
@@ -62,11 +62,10 @@ jobs:
               fi
             done
           done
-          # Sort and deduplicate targets, then quote for JSON
-          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | awk '{printf "\"%s\",", $0}' | sed 's/,$//')
-          UNIQUE_VERSIONS=$(printf "%s," "${VERSIONS_SET[@]}" | sed 's/,$//')
+          UNIQUE_TARGETS=$(printf "%s\n" "${TARGETS_SET[@]}" | sort -u | awk '{printf "\"%s\",",$0}' | sed 's/,$//')
+          UNIQUE_VERSIONS=$(printf "%s\n" "${VERSIONS_SET[@]}" | sort -u | awk '{printf "\"%s\",",$0}' | sed 's/,$//')
           TARGETS_OUTPUT="[${UNIQUE_TARGETS}]"
-          VERSIONS_OUTPUT="[${UNIQUE_VERSIONS}]"
+            VERSIONS_OUTPUT="[${UNIQUE_VERSIONS}]"
           echo "targets=$TARGETS_OUTPUT" >> $GITHUB_OUTPUT
           echo "versions=$VERSIONS_OUTPUT" >> $GITHUB_OUTPUT
           echo "Found valid targets: $TARGETS_OUTPUT"
@@ -93,8 +92,6 @@ jobs:
           TARGET="${{ matrix.target_version }}"
           echo "target=$TARGET" >> $GITHUB_OUTPUT
           echo "Building target: $TARGET"
-          VERSIONS="${{ fromJSON(needs.prebuild.outputs.versions) }}"
-          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
 
       - name: Trust Harbor's self-signed certificate
         run: |
@@ -142,13 +139,13 @@ jobs:
 
       - name: Install pigz for parallel compression
         run: |
-          sudo apt-get update && sudo apt-get install -y pigz
+          sudo apt-get update && sudo apt-get install -y pigz jq
 
       - name: Build Kernel for ${{ steps.extract.outputs.target }}
         run: |
             set -eux
             TARGET="${{ steps.extract.outputs.target }}"
-            VERSIONS_JSON='${{ steps.extract.outputs.versions }}'
+            VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_REPO_URL="https://github.com/rehosting/linux"
 
@@ -159,9 +156,13 @@ jobs:
             GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1
 
             # Convert JSON array to space-separated string
-            VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
+            if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
+              VERSIONS=""
+            else
+              VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
+            fi
 
-            ./build.sh --targets "$TARGET" --versions "$VERSIONS" --kernel-devel
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --kernel-devel
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
       - name: Push build artifact to registry with oras
