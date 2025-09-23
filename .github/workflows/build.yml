@@ -31,14 +31,13 @@ jobs:
           echo
           echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
 
-      - name: Setup shared Linux kernel sources
+      - name: Ensure local bare clone of base Linux repo
         run: |
           set -eux
           BASE_REPO_DIR="/home/runner/_shared/linux"
           BASE_REPO_URL="https://github.com/rehosting/linux"
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          mkdir -p "$RUNS_DIR"
+          
+          
           # Clone bare base repo if missing
           if [ ! -d "$BASE_REPO_DIR" ]; then
             echo "Cloning bare base repo to $BASE_REPO_DIR"
@@ -47,11 +46,33 @@ jobs:
           # Always fetch latest from upstream
           git --git-dir="$BASE_REPO_DIR" fetch --all
 
+      - name: Ensure linux cache exists
+        run: |
           BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
 
           if [ ! -d "$BASE_CACHE_DIR" ]; then
             mkdir -p "$BASE_CACHE_DIR"
           fi
+  
+      - name: Setup shared Linux kernel sources
+        run: |
+          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+          
+          mkdir -p "$RUNS_DIR"
+          mkdir -p "$RUNS_DIR/linux"
+
+          BASE_REPO_DIR="/home/runner/_shared/linux"
+          BASE_REPO_URL="https://github.com/rehosting/linux"
+
+          # Update .gitmodules to use local bare repo
+          sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
+          
+          # Initialize and update submodules for all versions
+          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
+
+          # move into the shared run directory
+          mv linux/* "$RUNS_DIR/linux/"
 
       - name: Find valid targets and versions sets
         id: find_targets
@@ -153,21 +174,11 @@ jobs:
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
             BASE_REPO_URL="https://github.com/rehosting/linux"
+            RUNS_PARENT="/home/runner/_shared/runs"
+            RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
+            RUNS_DIR_LINUX="$RUNS_DIR/linux"
 
-            # Update .gitmodules to use local bare repo
-            sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-
-            # Initialize and update submodules for all versions
-            GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
-
-            # Convert JSON array to space-separated string
-            if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
-              VERSIONS=""
-            else
-              VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
-            fi
-
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR"
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" -extra-docker-opts "-v RUNS_DIR_LINUX:/app/linux"
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
       - name: Push build artifact to registry with oras
