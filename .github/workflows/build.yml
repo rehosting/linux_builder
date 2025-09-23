@@ -179,7 +179,7 @@ jobs:
             RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
             RUNS_DIR_LINUX="$RUNS_DIR/linux"
 
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" -extra-docker-opts "-v RUNS_DIR_LINUX:/app/linux"
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $RUNS_DIR_LINUX:/app/linux"
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
       - name: Push build artifact to registry with oras
