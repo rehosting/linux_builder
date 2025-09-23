@@ -17,6 +17,7 @@ jobs:
     outputs:
       targets: ${{ steps.find_targets.outputs.targets }}
       versions: ${{ steps.find_targets.outputs.versions }}
+      sources_dir: ${{ steps.setup_sources.outputs.sources_dir }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,12 +60,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rsync
       - name: Setup shared Linux kernel sources
-        id: setup_sources # Add an ID here
+        id: setup_sources
         run: |
           set -eux
 
-          # Use the git ref to create a stable directory name
-          # This handles branches and pull requests correctly
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             REF_SLUG="pull-${{ github.event.pull_request.number }}"
           else
@@ -73,23 +72,22 @@ jobs:
           
           SOURCES_DIR="/home/runner/_shared/linux_sources/${REF_SLUG}"
           echo "Using stable source directory: $SOURCES_DIR"
-          echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT # Output the path
+          echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT
           
+          # Ensure the stable directory exists and copy the entire repo into it.
+          # The --delete flag keeps the destination in sync with the source.
           mkdir -p "$SOURCES_DIR"
+          rsync -a --delete . "$SOURCES_DIR/"
 
-          # Instead of checking out to a temporary local dir, check out
-          # into the stable shared directory.
-          # The --work-tree and --git-dir options tell git where to operate.
-          git --work-tree=. --git-dir=$PWD/.git checkout ${{ github.ref }} -- .
-          git --work-tree=. --git-dir=$PWD/.git submodule sync
+          # Change into the stable directory to perform all subsequent git operations
+          cd "$SOURCES_DIR"
           
           BASE_REPO_DIR="/home/runner/_shared/linux"
           sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-
-          # Update submodules directly within the stable sources directory
-          # We check out into the stable directory to preserve timestamps
-          git -C "$SOURCES_DIR" config --local core.worktree ../
-          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --recursive --jobs 2
+          
+          # Sync and update submodules from within the stable repository
+          git submodule sync
+          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
 
           # Use rsync to move the linux directory into the stable location
           # This is more robust than mv and helps preserve attributes.
