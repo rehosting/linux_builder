@@ -106,8 +106,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Resolve host cache directory path:
+if [[ "$CACHE_DIR" == "cache" ]]; then
+    CACHE_HOST_DIR="$PWD/cache"
+else
+    if [[ "$CACHE_DIR" != /* ]]; then
+        CACHE_HOST_DIR="$PWD/$CACHE_DIR"
+    else
+        CACHE_HOST_DIR="$CACHE_DIR"
+    fi
+fi
+
 if $CLEAR_CACHE; then
-    docker run --rm -v "$PWD/$CACHE_DIR":/tmp/build -v "$PWD":/app pandare/kernel_builder /bin/bash -c "rm -rf /tmp/build/*"
+    docker run --rm -v "$CACHE_HOST_DIR":/tmp/build -v "$PWD":/app pandare/kernel_builder /bin/bash -c "rm -rf /tmp/build/*"
     exit
 fi
 
@@ -117,10 +128,10 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     docker build -t "$IMAGE" .
 fi
 
-mkdir -p "$CACHE_DIR"
+mkdir -p "$CACHE_HOST_DIR"
 
 docker run $INTERACTIVE \
-    --rm -v "$PWD/$CACHE_DIR":/tmp/build \
+    --rm -v "$CACHE_HOST_DIR":/tmp/build \
     -v "$PWD":/app \
     $EXTRA_DOCKER_OPTS \
     "$IMAGE" \
