@@ -240,9 +240,18 @@ if ! $CONFIG_ONLY; then
     echo "Process $pid completed"
   done
   for VERSION in $VERSIONS; do
-    cat /kernels/$VERSION/osi.*.config >> /kernels/$VERSION/osi.config
+    # Only concatenate if the version directory exists and there are any osi.*.config files
+    if [ -d "/kernels/$VERSION" ]; then
+      shopt -s nullglob
+      osi_configs=(/kernels/$VERSION/osi.*.config)
+      if [ ${#osi_configs[@]} -gt 0 ]; then
+        cat "${osi_configs[@]}" >> /kernels/$VERSION/osi.config
+      fi
+      shopt -u nullglob
+    else
+      echo "Skipping osi.config aggregation for $VERSION (no /kernels/$VERSION directory)"
+    fi
   done
-  
   echo "All processes completed, creating final archive"
   echo "Built by linux_builder on $(date)" > /kernels/README.txt
   tar cvf - /kernels | pigz > /app/kernels-latest.tar.gz
