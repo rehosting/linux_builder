@@ -128,11 +128,9 @@ jobs:
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
             TARGET=${{ steps.extract.outputs.target }}
           cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ steps.extract.outputs.version }}_cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ steps.extract.outputs.version }}_cache-PR-${{github.event.number}},mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
           cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ steps.extract.outputs.version }}_cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ steps.extract.outputs.version }}_cache-PR-${{ github.event.number }}
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
           outputs: type=docker
 
       - uses: oras-project/setup-oras@v1.2.3
