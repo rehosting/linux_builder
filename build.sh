@@ -9,7 +9,7 @@ USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGE
 	--config-only
 		Only update the defconfigs instead of building the kernel
 	--versions VERSIONS
-		Build only the specified kernel versions. By default, all versions are built.
+		Build only the specified kernel versions. By default, all version directories under ./linux are built.
 	--targets TARGETS
 		Build only for the specified targets. By default, all targets are built.
 	--cache-dir DIR
@@ -30,7 +30,7 @@ EOF
 # Default options
 CONFIG_ONLY=false
 #VERSIONS="4.10 6.7"
-VERSIONS="4.10"
+VERSIONS=""   # Empty => auto-detect all version directories under ./linux
 TARGETS="armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpcle powerpc64 powerpc64le loongarch64 riscv64 x86_64"
 NO_STRIP=false
 MENU_CONFIG=false
@@ -105,6 +105,20 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Auto-detect versions if not provided
+if [[ -z "${VERSIONS// }" ]]; then
+    if [[ ! -d linux ]]; then
+        echo "Error: linux directory not found; cannot auto-detect versions. Use --versions." >&2
+        exit 1
+    fi
+    mapfile -t _version_dirs < <(find linux -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort -V)
+    if [[ ${#_version_dirs[@]} -eq 0 ]]; then
+        echo "Error: No version subdirectories found under linux/. Use --versions." >&2
+        exit 1
+    fi
+    VERSIONS="${_version_dirs[*]}"
+fi
 
 # Resolve host cache directory path:
 if [[ "$CACHE_DIR" == "cache" ]]; then
