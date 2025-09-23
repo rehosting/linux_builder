@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eu
+set -eux
 
 help() {
     cat >&2 <<EOF
@@ -110,11 +110,7 @@ done
 if [[ "$CACHE_DIR" == "cache" ]]; then
     CACHE_HOST_DIR="$PWD/cache"
 else
-    if [[ "$CACHE_DIR" != /* ]]; then
-        CACHE_HOST_DIR="$PWD/$CACHE_DIR"
-    else
-        CACHE_HOST_DIR="$CACHE_DIR"
-    fi
+    CACHE_HOST_DIR="$CACHE_DIR"
 fi
 
 if $CLEAR_CACHE; then
