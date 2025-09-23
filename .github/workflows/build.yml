@@ -54,11 +54,14 @@ jobs:
           if [ ! -d "$BASE_CACHE_DIR" ]; then
             mkdir -p "$BASE_CACHE_DIR"
           fi
+      - name: Install rsync
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
       - name: Setup shared Linux kernel sources
         id: setup_sources # Add an ID here
         run: |
           set -eux
-          apt-get install -y rsync
 
           # Use the git ref to create a stable directory name
           # This handles branches and pull requests correctly
