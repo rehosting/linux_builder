@@ -144,21 +144,23 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y pigz
 
-      - name: Build Kernel for ${{ steps.extract.outputs.tlarget }}
+      - name: Build Kernel for ${{ steps.extract.outputs.target }}
         run: |
             set -eux
             TARGET="${{ steps.extract.outputs.target }}"
-            VERSIONS="${{ steps.extract.outputs.versions }}"
+            VERSIONS_JSON='${{ steps.extract.outputs.versions }}'
             BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_REPO_URL="https://github.com/rehosting/linux"
 
             # Update .gitmodules to use local bare repo
             sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-            
-            # Initialize and update submodules for all versions
-            git submodule update --init --depth 1
 
-            mkdir -p cache
+            # Initialize and update submodules for all versions
+            GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1
+
+            # Convert JSON array to space-separated string
+            VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
+
             ./build.sh --targets "$TARGET" --versions "$VERSIONS" --kernel-devel
             tar -cf - kernels-latest.tar.gz kernel-devel-all.tar.gz | pigz -p $(nproc) > build-output-${TARGET}.tar.gz
 
