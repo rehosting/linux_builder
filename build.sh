@@ -4,7 +4,7 @@ set -eu
 
 help() {
     cat >&2 <<EOF
-USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGETS]
+USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGETS] [--cache-dir DIR]
 
 	--config-only
 		Only update the defconfigs instead of building the kernel
@@ -12,6 +12,10 @@ USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGE
 		Build only the specified kernel versions. By default, all versions are built.
 	--targets TARGETS
 		Build only for the specified targets. By default, all targets are built.
+	--cache-dir DIR
+		Use DIR as the build cache directory (default: cache)
+	--clear-cache
+		Delete all contents of the cache directory and exit.
 
 EXAMPLES
 	./build.sh --config-only --versions "4.10 6.7" --targets "armel mipseb mipsel mips64eb"
@@ -19,6 +23,7 @@ EXAMPLES
 	./build.sh --targets armel
 	./build.sh
 	./build.sh --extra-docker-opts "--cpus=2"
+	./build.sh --cache-dir build_cache
 EOF
 }
 
@@ -34,6 +39,8 @@ DIFFDEFCONFIG=false
 KERNEL_DEVEL=true
 IMAGE="rehosting/linux_builder"
 EXTRA_DOCKER_OPTS=""
+CACHE_DIR="cache"
+CLEAR_CACHE=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -43,12 +50,12 @@ while [[ $# -gt 0 ]]; do
             exit
             ;;
         --clear-cache)
-            docker run --rm -v $PWD/cache:/tmp/build -v $PWD:/app pandare/kernel_builder /bin/bash -c "rm -r /tmp/build/*"
-            exit
+            CLEAR_CACHE=true
+            shift
             ;;
         --config-only)
             CONFIG_ONLY=true
-            shift # past flag
+            shift
             ;;
         --versions)
             VERSIONS="$2"
@@ -87,6 +94,11 @@ while [[ $# -gt 0 ]]; do
             shift # past flag
             shift # past value
             ;;
+        --cache-dir)
+            CACHE_DIR="$2"
+            shift # past flag
+            shift # past value
+            ;;
         *)
             help
             exit 1
@@ -94,17 +106,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if $CLEAR_CACHE; then
+    docker run --rm -v "$PWD/$CACHE_DIR":/tmp/build -v "$PWD":/app pandare/kernel_builder /bin/bash -c "rm -rf /tmp/build/*"
+    exit
+fi
+
 # Check if the image exists locally, build if not
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "Docker image $IMAGE not found, building it..."
     docker build -t "$IMAGE" .
 fi
 
-mkdir -p cache
+mkdir -p "$CACHE_DIR"
 
 docker run $INTERACTIVE \
-    --rm -v $PWD/cache:/tmp/build \
-    -v $PWD:/app \
+    --rm -v "$PWD/$CACHE_DIR":/tmp/build \
+    -v "$PWD":/app \
     $EXTRA_DOCKER_OPTS \
     "$IMAGE" \
     bash /app/_in_container_build.sh \
