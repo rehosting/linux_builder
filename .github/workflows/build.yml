@@ -54,26 +54,43 @@ jobs:
           if [ ! -d "$BASE_CACHE_DIR" ]; then
             mkdir -p "$BASE_CACHE_DIR"
           fi
-  
       - name: Setup shared Linux kernel sources
+        id: setup_sources # Add an ID here
         run: |
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          
-          mkdir -p "$RUNS_DIR"
-          mkdir -p "$RUNS_DIR/linux"
+          set -eux
+          apt-get install -y rsync
 
+          # Use the git ref to create a stable directory name
+          # This handles branches and pull requests correctly
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            REF_SLUG="pull-${{ github.event.pull_request.number }}"
+          else
+            REF_SLUG=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g')
+          fi
+          
+          SOURCES_DIR="/home/runner/_shared/linux_sources/${REF_SLUG}"
+          echo "Using stable source directory: $SOURCES_DIR"
+          echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT # Output the path
+          
+          mkdir -p "$SOURCES_DIR"
+
+          # Instead of checking out to a temporary local dir, check out
+          # into the stable shared directory.
+          # The --work-tree and --git-dir options tell git where to operate.
+          git --work-tree=. --git-dir=$PWD/.git checkout ${{ github.ref }} -- .
+          git --work-tree=. --git-dir=$PWD/.git submodule sync
+          
           BASE_REPO_DIR="/home/runner/_shared/linux"
-          BASE_REPO_URL="https://github.com/rehosting/linux"
-
-          # Update .gitmodules to use local bare repo
           sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-          
-          # Initialize and update submodules for all versions
-          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
 
-          # move into the shared run directory
-          mv linux/* "$RUNS_DIR/linux/"
+          # Update submodules directly within the stable sources directory
+          # We check out into the stable directory to preserve timestamps
+          git -C "$SOURCES_DIR" config --local core.worktree ../
+          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --recursive --jobs 2
+
+          # Use rsync to move the linux directory into the stable location
+          # This is more robust than mv and helps preserve attributes.
+          rsync -a --delete linux/ "$SOURCES_DIR/linux/" 
 
       - name: Find valid targets and versions sets
         id: find_targets
@@ -160,29 +177,26 @@ jobs:
           cache-to: |
             type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
           outputs: type=docker
-
       - name: Build Kernel for ${{ matrix.target_version }}
         run: |
             set -eux
             TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
-            BASE_REPO_DIR="/home/runner/_shared/linux"
             BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
-            BASE_REPO_URL="https://github.com/rehosting/linux"
-            RUNS_PARENT="/home/runner/_shared/runs"
-            RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-            RUNS_DIR_LINUX="$RUNS_DIR/linux"
+            # Use the output from the prebuild job
+            SOURCES_DIR="${{ needs.prebuild.outputs.sources_dir }}/linux"
 
-            # Convert JSON array to space-separated string
             if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
               VERSIONS=""
             else
               VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
             fi
 
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $RUNS_DIR_LINUX:/app/linux"
+            # Mount the stable source directory instead of the run-specific one
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
 
-            BUILD_OUTPUT="$RUNS_DIR/build-output"
+            # Use a run-specific output directory to avoid clashes
+            BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
             mkdir -p $BUILD_OUTPUT
             mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
             mv kernel-devel-all.tar.gz $BUILD_OUTPUT/kernel-devel-all-${TARGET}.tar.gz
