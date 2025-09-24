@@ -100,6 +100,17 @@ for TARGET in $TARGETS; do
     fi
 
     echo "Building $BUILD_TARGETS for $TARGET"
+    # Compute toolchain prefix once
+    tool_prefix=$(get_cc $TARGET)
+    # Prepare make base (no per-call command substitution)
+    MAKE_BASE="make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=${tool_prefix} O=/tmp/build/${VERSION}/${TARGET}/"
+    # Enable ccache by exporting CC/HOSTCC (simpler & robust)
+    if $USE_CCACHE && command -v ccache >/dev/null 2>&1; then
+      export CC="ccache ${tool_prefix}gcc"
+      export HOSTCC="ccache gcc"
+    else
+      unset CC HOSTCC || true
+    fi
 
     if [ ! -f "/app/configs/${VERSION}/${TARGET}" ]; then
         echo "No config for $TARGET" avaiable for version $VERSION.
@@ -122,29 +133,24 @@ for TARGET in $TARGETS; do
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
-      EXTRA_MAKE_FLAGS=""
-      if $USE_CCACHE && command -v ccache >/dev/null 2>&1; then
-        EXTRA_MAKE_FLAGS="CC='ccache $(get_cc $TARGET)gcc' HOSTCC='ccache gcc'"
-      fi
-      MAKE_BASE="make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/"
       echo "Building kernel for $TARGET (ccache: $USE_CCACHE)"
-      $MAKE_BASE $EXTRA_MAKE_FLAGS olddefconfig
+      $MAKE_BASE olddefconfig
       if $MENU_CONFIG; then
-        $MAKE_BASE $EXTRA_MAKE_FLAGS menuconfig
+        $MAKE_BASE menuconfig
         exit
       elif $DIFFDEFCONFIG; then
         cp /tmp/build/${VERSION}/${TARGET}/.config /tmp/original_config
-        $MAKE_BASE $EXTRA_MAKE_FLAGS defconfig
+        $MAKE_BASE defconfig
         /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
-      $MAKE_BASE $EXTRA_MAKE_FLAGS $BUILD_TARGETS -j$(nproc)
+      $MAKE_BASE $BUILD_TARGETS -j$(nproc)
 
       # Always run modules_prepare to ensure headers and Module.symvers are generated
-      $MAKE_BASE $EXTRA_MAKE_FLAGS modules_prepare
+      $MAKE_BASE modules_prepare
 
       # Build modules to ensure Module.symvers is generated
-      $MAKE_BASE $EXTRA_MAKE_FLAGS modules -j$(nproc)
+      $MAKE_BASE modules -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 
@@ -237,7 +243,6 @@ for TARGET in $TARGETS; do
         # Ensure fixdep is present for out-of-tree module builds
         cp -r "$KBUILD_DIR/scripts/" "$OUTDIR/scripts/" || true
       ) &
-      
       # Store the PID of the background process
       pids+=($!)
       echo "Started background process ${pids[-1]} for $TARGET ($VERSION)"
