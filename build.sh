@@ -4,7 +4,7 @@ set -eux
 
 help() {
     cat >&2 <<EOF
-USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGETS] [--cache-dir DIR]
+USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGETS] [--cache-dir DIR] [--ccache-dir DIR]
 
 	--config-only
 		Only update the defconfigs instead of building the kernel
@@ -14,6 +14,8 @@ USAGE ./build.sh [--help] [--config-only] [--versions VERSIONS] [--targets TARGE
 		Build only for the specified targets. By default, all targets are built.
 	--cache-dir DIR
 		Use DIR as the build cache directory (default: cache)
+	--ccache-dir DIR
+		Use DIR as a persistent ccache directory (disabled if omitted)
 	--clear-cache
 		Delete all contents of the cache directory and exit.
 
@@ -40,6 +42,7 @@ KERNEL_DEVEL=true
 IMAGE="rehosting/linux_builder"
 EXTRA_DOCKER_OPTS=""
 CACHE_DIR="cache"
+CCACHE_DIR=""
 CLEAR_CACHE=false
 
 # Parse command-line arguments
@@ -99,6 +102,11 @@ while [[ $# -gt 0 ]]; do
             shift # past flag
             shift # past value
             ;;
+        --ccache-dir)
+            CCACHE_DIR="$2"
+            shift
+            shift
+            ;;
         *)
             help
             exit 1
@@ -140,11 +148,23 @@ fi
 
 mkdir -p "$CACHE_HOST_DIR"
 
+USE_CCACHE=false
+if [[ -n "$CCACHE_DIR" ]]; then
+    USE_CCACHE=true
+fi
+
+docker_opts_ccache=()
+if $USE_CCACHE; then
+    mkdir -p "$CCACHE_DIR"
+    docker_opts_ccache+=(-v "$CCACHE_DIR":/ccache -e CCACHE_DIR=/ccache)
+fi
+
 docker run $INTERACTIVE \
     --rm -v "$CACHE_HOST_DIR":/tmp/build \
     -v "$PWD":/app \
+    "${docker_opts_ccache[@]}" \
     $EXTRA_DOCKER_OPTS \
     "$IMAGE" \
     bash /app/_in_container_build.sh \
     "$CONFIG_ONLY" "$VERSIONS" "$TARGETS" \
-    "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG" "$KERNEL_DEVEL"
+    "$NO_STRIP" "$MENU_CONFIG" "$DIFFDEFCONFIG" "$KERNEL_DEVEL" "$USE_CCACHE"

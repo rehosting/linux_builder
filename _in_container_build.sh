@@ -14,6 +14,7 @@ NO_STRIP="$4"
 MENU_CONFIG="$5"
 DIFFDEFCONFIG="$6"
 KERNEL_DEVEL="${7:-false}"
+USE_CCACHE="${8:-false}"
 
 echo "Config only: $CONFIG_ONLY"
 echo "Versions: $VERSIONS"
@@ -59,6 +60,13 @@ get_cc() {
         echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
     fi
 }
+
+if $USE_CCACHE && command -v ccache >/dev/null 2>&1; then
+  export CCACHE_DIR=/ccache
+  ccache -M 20G || true
+  ccache -s || true
+  echo "ccache enabled with CCACHE_DIR=$CCACHE_DIR"
+fi
 
 for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
@@ -114,24 +122,29 @@ for TARGET in $TARGETS; do
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
-      echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      EXTRA_MAKE_FLAGS=""
+      if $USE_CCACHE && command -v ccache >/dev/null 2>&1; then
+        EXTRA_MAKE_FLAGS="CC='ccache $(get_cc $TARGET)gcc' HOSTCC='ccache gcc'"
+      fi
+      MAKE_BASE="make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/"
+      echo "Building kernel for $TARGET (ccache: $USE_CCACHE)"
+      $MAKE_BASE $EXTRA_MAKE_FLAGS olddefconfig
       if $MENU_CONFIG; then
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
+        $MAKE_BASE $EXTRA_MAKE_FLAGS menuconfig
         exit
       elif $DIFFDEFCONFIG; then
         cp /tmp/build/${VERSION}/${TARGET}/.config /tmp/original_config
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
+        $MAKE_BASE $EXTRA_MAKE_FLAGS defconfig
         /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      $MAKE_BASE $EXTRA_MAKE_FLAGS $BUILD_TARGETS -j$(nproc)
 
       # Always run modules_prepare to ensure headers and Module.symvers are generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
+      $MAKE_BASE $EXTRA_MAKE_FLAGS modules_prepare
 
       # Build modules to ensure Module.symvers is generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
+      $MAKE_BASE $EXTRA_MAKE_FLAGS modules -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 

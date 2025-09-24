@@ -51,10 +51,14 @@ jobs:
       - name: Ensure linux cache exists
         run: |
           BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
-
           if [ ! -d "$BASE_CACHE_DIR" ]; then
             mkdir -p "$BASE_CACHE_DIR"
           fi
+      - name: Ensure ccache directory exists
+        run: |
+          CCACHE_DIR="/home/runner/_shared/linux_builder/ccache"
+          mkdir -p "$CCACHE_DIR"
+          echo "Ensured ccache dir at $CCACHE_DIR"
       - name: Install rsync
         run: |
           sudo apt-get update
@@ -178,19 +182,17 @@ jobs:
             TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
             BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
-            # Use the output from the prebuild job
+            CCACHE_DIR="/home/runner/_shared/linux_builder/ccache"
             SOURCES_DIR="${{ needs.prebuild.outputs.sources_dir }}/linux"
-
             if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
               VERSIONS=""
             else
               VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
             fi
-
-            # Mount the stable source directory instead of the run-specific one
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
-
-            # Use a run-specific output directory to avoid clashes
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} \
+              --cache-dir "$BASE_CACHE_DIR" \
+              --ccache-dir "$CCACHE_DIR" \
+              --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
             BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
             mkdir -p $BUILD_OUTPUT
             mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
