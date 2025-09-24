@@ -63,14 +63,8 @@ jobs:
         id: setup_sources
         run: |
           set -eux
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            REF_SLUG="pull-${{ github.event.pull_request.number }}"
-          else
-            REF_SLUG=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g')
-          fi
           
-          SOURCES_DIR="/home/runner/_shared/linux_sources/${REF_SLUG}"
+          SOURCES_DIR="/home/runner/_shared/linux_sources/"
           echo "Using stable source directory: $SOURCES_DIR"
           echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT
           
