@@ -92,7 +92,7 @@ for TARGET in $TARGETS; do
     # Apply extra warning suppressions only for old kernels
     if [[ "$VERSION" == "4.10" && "$TARGET" == powerpc* ]]; then
         echo "Applying global Wno-error for $VERSION $TARGET"
-        extra_wnoerr="-Wno-error -Wno-error=stringop-truncation -Wno-error=format-truncation -Wno-error=maybe-uninitialized -Wno-error=deprecated-declarations"
+        extra_wnoerr="-Wno-error -Wno-error=stringop-truncation -Wno-error=format-truncation -Wno-error=maybe-uninitialized -Wno-error=deprecated-declarations -Wno-error=array-bounds"
         export KCFLAGS="${KCFLAGS:-} $extra_wnoerr"
         export KBUILD_CFLAGS="${KBUILD_CFLAGS:-} $extra_wnoerr"
         export HOSTCFLAGS="${HOSTCFLAGS:-} -Wno-error"
