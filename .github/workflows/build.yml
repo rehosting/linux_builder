@@ -177,7 +177,7 @@ jobs:
             set -eux
             TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
-            BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
+            # BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
             # Use the output from the prebuild job
             SOURCES_DIR="${{ needs.prebuild.outputs.sources_dir }}/linux"
 
@@ -188,7 +188,7 @@ jobs:
             fi
 
             # Mount the stable source directory instead of the run-specific one
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
+            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} #--cache-dir "$BASE_CACHE_DIR" --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
 
             # Use a run-specific output directory to avoid clashes
             BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
