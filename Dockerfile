@@ -8,5 +8,3 @@ RUN mkdir /extract_kernelinfo && \
     wget https://raw.githubusercontent.com/panda-re/panda-ng/refs/heads/main/plugins/osi_linux/utils/kernelinfo_gdb/run.sh -O /extract_kernelinfo/run.sh && \
     chmod +x /extract_kernelinfo/run.sh
 
-RUN wget https://github.com/volatilityfoundation/dwarf2json/releases/download/v0.9.0/dwarf2json-linux-amd64 -O /bin/dwarf2json && \
-	chmod +x /bin/dwarf2json
