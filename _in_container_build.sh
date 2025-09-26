@@ -25,15 +25,13 @@ echo "diffdefconfig: $DIFFDEFCONFIG"
 # Array to keep track of child processes
 declare -a pids
 
-# Set this to update defconfigs instead of building kernel
-
+# Compiler prefix chooser
 get_cc() {
     local arch=$1
     local abi=""
 
-    # Clear CFLAGS and KCFLAGS if they are set
+    # Clear only CFLAGS; do not clear KCFLAGS or KBUILD_CFLAGS here
     unset CFLAGS
-    unset KCFLAGS
 
     if [[ $arch == *"arm64"* ]]; then
         abi=""
@@ -42,7 +40,7 @@ get_cc() {
         abi="eabi"
         if [[ $arch == *"eb"* ]]; then
             export CFLAGS="-mbig-endian"
-            export KCFLAGS="-mbig-endian"
+            export KCFLAGS="${KCFLAGS:-} -mbig-endian"
         fi
         arch="arm"
     fi
@@ -89,6 +87,15 @@ for TARGET in $TARGETS; do
         short_arch="riscv"
     elif [ "$short_arch" == "riscv32" ]; then
         short_arch="riscv"
+    fi
+
+    # Apply extra warning suppressions only for old kernels
+    if [[ "$VERSION" == "4.10" && "$TARGET" == powerpc* ]]; then
+        echo "Applying global Wno-error for $VERSION $TARGET"
+        extra_wnoerr="-Wno-error -Wno-error=stringop-truncation -Wno-error=format-truncation -Wno-error=maybe-uninitialized -Wno-error=deprecated-declarations"
+        export KCFLAGS="${KCFLAGS:-} $extra_wnoerr"
+        export KBUILD_CFLAGS="${KBUILD_CFLAGS:-} $extra_wnoerr"
+        export HOSTCFLAGS="${HOSTCFLAGS:-} -Wno-error"
     fi
 
     echo "Building $BUILD_TARGETS for $TARGET"
