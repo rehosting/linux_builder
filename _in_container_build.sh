@@ -25,9 +25,10 @@ echo "diffdefconfig: $DIFFDEFCONFIG"
 # Array to keep track of child processes
 declare -a pids
 
-# Compiler prefix chooser
+# Function to get cross-compiler prefix
 get_cc() {
     local arch=$1
+    local version=$2
     local abi=""
 
     # Clear only CFLAGS; do not clear KCFLAGS or KBUILD_CFLAGS here
@@ -47,8 +48,12 @@ get_cc() {
 
     if [[ $arch == *"loongarch"* ]]; then
         echo "/opt/cross/loongarch64-linux-gcc-cross/bin/loongarch64-unknown-linux-gnu-"
-    elif [[ $arch == *"powerpc"* ]]; then
+    elif [[ $arch == *"powerpc"* ]] && [ "$version" = "4.10" ]; then
+        echo "powerpc64-linux-gnu-"
+    elif [[ $arch == *"powerpc"* ]] && [ "$version" != "4.10" ]; then
         echo "/opt/cross/powerpc64-linux-musl-cross/bin/powerpc64-linux-musl-"
+    elif [ "$arch" = "x86_64" ] && [ "$version" = "4.10" ]; then
+        echo "/opt/cross/x86_64-legacy/bin/x86_64-linux-musl-"
     elif [[ $arch == "riscv64" ]]; then
         # riscv64 linux-musl seems to run out of memory on linking so we switched
         # to the glibc version
@@ -117,28 +122,28 @@ for TARGET in $TARGETS; do
     # If updating configs, lint them with kernel first! This removes default options and duplicates.
     if $CONFIG_ONLY; then
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
       if $MENU_CONFIG; then
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
         exit
       elif $DIFFDEFCONFIG; then
         cp /tmp/build/${VERSION}/${TARGET}/.config /tmp/original_config
-        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
+        make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ defconfig
         /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       # Always run modules_prepare to ensure headers and Module.symvers are generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
 
       # Build modules to ensure Module.symvers is generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
 
       mkdir -p /kernels/$VERSION
 
@@ -189,7 +194,7 @@ for TARGET in $TARGETS; do
           if $DELIVER_VMLINUX; then
             cp "${VMLINUX_SRC}" "/kernels/$VERSION/vmlinux.${TARGET}"
             if ! $NO_STRIP; then
-              $(get_cc $TARGET)strip "/kernels/$VERSION/vmlinux.${TARGET}"
+              $(get_cc $TARGET $VERSION)strip "/kernels/$VERSION/vmlinux.${TARGET}"
             fi
           fi
 
