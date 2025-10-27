@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
-      
+
       - name: Log git revisions of all linux projects
         run: |
           echo "Main repo revision:" && git rev-parse HEAD
@@ -37,8 +37,8 @@ jobs:
           set -eux
           BASE_REPO_DIR="/home/runner/_shared/linux"
           BASE_REPO_URL="https://github.com/rehosting/linux"
-          
-          
+
+
           # Clone bare base repo if missing
           if [ ! -d "$BASE_REPO_DIR" ]; then
             echo "Cloning bare base repo to $BASE_REPO_DIR"
@@ -46,7 +46,7 @@ jobs:
             cd $BASE_REPO_DIR && git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
           fi
           # Always fetch latest from upstream
-          git fetch origin --prune --tags --force
+          cd "$BASE_REPO_DIR" && git fetch origin --prune --tags --force
 
       - name: Ensure linux cache exists
         run: |
@@ -63,11 +63,11 @@ jobs:
         id: setup_sources
         run: |
           set -eux
-          
+
           SOURCES_DIR="/home/runner/_shared/linux_sources/"
           echo "Using stable source directory: $SOURCES_DIR"
           echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT
-          
+
           # Ensure the stable directory exists and copy the entire repo into it.
           # The --delete flag keeps the destination in sync with the source.
           mkdir -p "$SOURCES_DIR"
@@ -75,17 +75,17 @@ jobs:
 
           # Change into the stable directory to perform all subsequent git operations
           cd "$SOURCES_DIR"
-          
+
           BASE_REPO_DIR="/home/runner/_shared/linux"
           sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-          
+
           # Sync and update submodules from within the stable repository
           git submodule sync
           GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
 
           # Use rsync to move the linux directory into the stable location
           # This is more robust than mv and helps preserve attributes.
-          rsync -a --delete linux/ "$SOURCES_DIR/linux/" 
+          rsync -a --delete linux/ "$SOURCES_DIR/linux/"
 
       - name: Find valid targets and versions sets
         id: find_targets
@@ -145,7 +145,7 @@ jobs:
           registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -156,7 +156,7 @@ jobs:
             [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
               insecure = true
               http = true
-      
+
       - name: Build kernel_builder docker image
         uses: docker/build-push-action@v6
         with:
@@ -195,7 +195,7 @@ jobs:
             mkdir -p $BUILD_OUTPUT
             mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
             mv kernel-devel-all.tar.gz $BUILD_OUTPUT/kernel-devel-all-${TARGET}.tar.gz
-  
+
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
