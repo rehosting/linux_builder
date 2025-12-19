@@ -102,7 +102,7 @@ jobs:
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
 
-          mkdir BUILD_OUTPUT="/_shared/runs/$GITHUB_RUN_ID/build-output"
+          mkdir -p /_shared/runs/$GITHUB_RUN_ID/build-output
 
   build:
     needs: prebuild
