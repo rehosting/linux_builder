@@ -102,6 +102,8 @@ jobs:
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
 
+          mkdir BUILD_OUTPUT="/_shared/runs/$GITHUB_RUN_ID/build-output"
+
   build:
     needs: prebuild
     runs-on: rehosting-arc
@@ -180,7 +182,6 @@ jobs:
 
             # Use a run-specific output directory to avoid clashes
             BUILD_OUTPUT="/_shared/runs/$GITHUB_RUN_ID/build-output"
-            mkdir -p $BUILD_OUTPUT
             sudo chown runner:runner -R $BUILD_OUTPUT
             ls -l "$BUILD_OUTPUT"
             mount
