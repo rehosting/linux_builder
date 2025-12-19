@@ -78,6 +78,8 @@ jobs:
           # This is more robust than mv and helps preserve attributes.
           rsync -a --delete linux/ "$SOURCES_DIR/linux/"
 
+          mkdir -p /_shared/runs/$GITHUB_RUN_ID/build-output
+
       - name: Find valid targets and versions sets
         id: find_targets
         run: |
@@ -102,7 +104,6 @@ jobs:
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
 
-          mkdir -p /_shared/runs/$GITHUB_RUN_ID/build-output
 
   build:
     needs: prebuild
