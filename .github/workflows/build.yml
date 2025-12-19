@@ -185,6 +185,7 @@ jobs:
             BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
             mkdir -p $BUILD_OUTPUT
             ls -l "$BUILD_OUTPUT"
+            mount
             mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
             mv kernel-devel-all.tar.gz $BUILD_OUTPUT/kernel-devel-all-${TARGET}.tar.gz
 
