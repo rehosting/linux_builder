@@ -181,6 +181,7 @@ jobs:
             # Use a run-specific output directory to avoid clashes
             BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
             mkdir -p $BUILD_OUTPUT
+            sudo chown runner:runner -R $BUILD_OUTPUT
             ls -l "$BUILD_OUTPUT"
             mount
             :> $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
