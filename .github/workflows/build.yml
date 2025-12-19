@@ -26,7 +26,7 @@ jobs:
       - name: Ensure local bare clone of base Linux repo
         run: |
           set -eux
-          BASE_REPO_DIR="/home/runner/_shared/linux"
+          BASE_REPO_DIR="/_shared/linux"
           BASE_REPO_URL="https://github.com/rehosting/linux"
 
 
@@ -41,7 +41,7 @@ jobs:
 
       - name: Ensure linux cache exists
         run: |
-          BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
+          BASE_CACHE_DIR="/_shared/linux_builder/cache"
 
           if [ ! -d "$BASE_CACHE_DIR" ]; then
             mkdir -p "$BASE_CACHE_DIR"
@@ -55,7 +55,7 @@ jobs:
         run: |
           set -eux
 
-          SOURCES_DIR="/home/runner/_shared/linux_sources/"
+          SOURCES_DIR="/_shared/linux_sources/"
           echo "Using stable source directory: $SOURCES_DIR"
           echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT
 
@@ -67,7 +67,7 @@ jobs:
           # Change into the stable directory to perform all subsequent git operations
           cd "$SOURCES_DIR"
 
-          BASE_REPO_DIR="/home/runner/_shared/linux"
+          BASE_REPO_DIR="/_shared/linux"
           sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
 
           # Sync and update submodules from within the stable repository
@@ -168,7 +168,7 @@ jobs:
             set -eux
             TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
-            # BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
+            # BASE_CACHE_DIR="/_shared/linux_builder/cache"
             # Use the output from the prebuild job
             SOURCES_DIR="${{ needs.prebuild.outputs.sources_dir }}/linux"
 
@@ -179,7 +179,7 @@ jobs:
             fi
 
             # Use a run-specific output directory to avoid clashes
-            BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
+            BUILD_OUTPUT="/_shared/runs/$GITHUB_RUN_ID/build-output"
             mkdir -p $BUILD_OUTPUT
             sudo chown runner:runner -R $BUILD_OUTPUT
             ls -l "$BUILD_OUTPUT"
@@ -212,7 +212,7 @@ jobs:
       - name: Combine all kernels into a single archive
         run: |
           set -eux
-          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_PARENT="/_shared/runs"
           RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
           BUILD_OUTPUT="$RUNS_DIR/build-output"
 
@@ -250,7 +250,7 @@ jobs:
       - name: Aggregate all kernel-devel artifacts
         run: |
           set -eux
-          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_PARENT="/_shared/runs"
           RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
           BUILD_OUTPUT="$RUNS_DIR/build-output"
 
@@ -274,7 +274,7 @@ jobs:
       - name: Cleanup per-run kernel clones
         if: always()
         run: |
-          RUNS_PARENT="/home/runner/_shared/runs"
+          RUNS_PARENT="/_shared/runs"
           RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
           echo "Cleaning up kernel clones in $RUNS_DIR"
           rm -rf "$RUNS_DIR"
