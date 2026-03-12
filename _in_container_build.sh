@@ -64,6 +64,7 @@ get_cc() {
 }
 
 for VERSION in $VERSIONS; do
+make -C /app/linux/$VERSION mrproper
 for TARGET in $TARGETS; do
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
@@ -144,8 +145,36 @@ for TARGET in $TARGETS; do
 
       # Build modules to ensure Module.symvers is generated
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
+      
+      # Prepare and completely clean the output directory for perf
+      PERF_OUTDIR="/tmp/build/${VERSION}/${TARGET}/tools/perf/"
+      rm -rf "$PERF_OUTDIR"
+      mkdir -p "$PERF_OUTDIR"
 
+      # Build perf utility statically
+      make -C /app/linux/$VERSION/tools/perf \
+          ARCH=${short_arch} \
+          CROSS_COMPILE=$(get_cc $TARGET $VERSION) \
+          OUTPUT="$PERF_OUTDIR" \
+          LDFLAGS="-static" \
+          WERROR=0 \
+          EXTRA_CFLAGS="-Wno-error -fcommon -D__always_inline=inline -Wno-redundant-decls -Wno-format-truncation -Wno-format-overflow -Wno-array-bounds" \
+          HOSTCFLAGS="-Wno-error" \
+          NO_LIBELF=1 NO_LIBUNWIND=1 NO_LIBNUMA=1 NO_LIBAUDIT=1 \
+          NO_LIBBIONIC=1 NO_LIBPYTHON=1 NO_LIBPERL=1 NO_SLANG=1 NO_LZMA=1 \
+          NO_ZLIB=1 NO_LIBBPF=1 NO_JVMTI=1 NO_LIBCRYPTO=1 NO_LIBZSTD=1 \
+          NO_LIBTRACEEVENT=1 NO_AUXTRACE=1 NO_CORESIGHT=1 \
+          -j$(nproc) || echo "Warning: Failed to build perf for $TARGET ($VERSION)"
       mkdir -p /kernels/$VERSION
+
+      # Copy perf to delivery directory
+      PERF_SRC="${PERF_OUTDIR}perf"
+      if [ -f "$PERF_SRC" ]; then
+        cp "$PERF_SRC" "/kernels/$VERSION/perf.${TARGET}"
+        if ! $NO_STRIP; then
+          $(get_cc $TARGET $VERSION)strip "/kernels/$VERSION/perf.${TARGET}" || true
+        fi
+      fi
 
       # Copy only the required boot artifact per architecture
       BOOT_SRC=""
