@@ -66,6 +66,7 @@ get_cc() {
 for VERSION in $VERSIONS; do
 make -C /app/linux/$VERSION mrproper
 for TARGET in $TARGETS; do
+    unset KCFLAGS KBUILD_CFLAGS HOSTCFLAGS
     BUILD_TARGETS="vmlinux"
     if [ $TARGET == "armel" ]; then
         BUILD_TARGETS="vmlinux zImage"
@@ -128,6 +129,12 @@ for TARGET in $TARGETS; do
       diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
     else
       echo "Building kernel for $TARGET"
+      # 2. Inject missing label for x86_64 R_X86_64_PLT32 backport bug
+      if [[ "$VERSION" == "4.10" && "$TARGET" == "x86_64" ]]; then
+          grep -q "invalid_relocation:" /app/linux/$VERSION/arch/x86/kernel/module.c || \
+          sed -i 's/overflow:/invalid_relocation:\n\treturn -ENOEXEC;\noverflow:/g' /app/linux/$VERSION/arch/x86/kernel/module.c
+      fi
+
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ olddefconfig
       if $MENU_CONFIG; then
         make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ menuconfig
@@ -151,10 +158,19 @@ for TARGET in $TARGETS; do
       rm -rf "$PERF_OUTDIR"
       mkdir -p "$PERF_OUTDIR"
 
+      # 3. Prepare specific Linker flags for MIPS64 ABI mismatches
+      PERF_LD="$(get_cc $TARGET $VERSION)ld"
+      if [[ "$TARGET" == *"mips64el"* ]]; then
+          PERF_LD="${PERF_LD} -m elf64ltsmip"
+      elif [[ "$TARGET" == *"mips64eb"* || "$TARGET" == "mips64" ]]; then
+          PERF_LD="${PERF_LD} -m elf64btsmip"
+      fi
+
       # Build perf utility statically
       make -C /app/linux/$VERSION/tools/perf \
           ARCH=${short_arch} \
           CROSS_COMPILE=$(get_cc $TARGET $VERSION) \
+          LD="$PERF_LD" \
           OUTPUT="$PERF_OUTDIR" \
           LDFLAGS="-static" \
           WERROR=0 \
