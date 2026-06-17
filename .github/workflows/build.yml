@@ -190,11 +190,19 @@ jobs:
             # Mount the stable source directory instead of the run-specific one
             ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
 
-            # Use a run-specific output directory to avoid clashes
-            BUILD_OUTPUT="/home/runner/_shared/runs/$GITHUB_RUN_ID/build-output"
-            mkdir -p $BUILD_OUTPUT
-            mv kernels-latest.tar.gz $BUILD_OUTPUT/kernels-latest-${TARGET}.tar.gz
-            mv kernel-devel-all.tar.gz $BUILD_OUTPUT/kernel-devel-all-${TARGET}.tar.gz
+            # Stage per-target outputs in the workspace; they are handed to the
+            # aggregate job via workflow artifacts (below) instead of a shared
+            # hostPath, so build and aggregate need not run on the same node.
+            mkdir -p build-output
+            mv kernels-latest.tar.gz build-output/kernels-latest-${TARGET}.tar.gz
+            mv kernel-devel-all.tar.gz build-output/kernel-devel-all-${TARGET}.tar.gz
+
+      - name: Upload per-target kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernels-${{ matrix.target_version }}
+          path: build-output/
+          retention-days: 1
 
   aggregate:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -218,12 +226,19 @@ jobs:
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
+      - name: Download all per-target kernel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: kernels-*
+          path: build-output
+          merge-multiple: true
+
       - name: Combine all kernels into a single archive
         run: |
           set -eux
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          BUILD_OUTPUT="$RUNS_DIR/build-output"
+          # Artifacts downloaded by the step above land here (workspace-local,
+          # node-agnostic) instead of the old /home/runner/_shared/runs hostPath.
+          BUILD_OUTPUT="$GITHUB_WORKSPACE/build-output"
 
           echo "[DEBUG] Listing available per-target kernel archives:"
           find "$BUILD_OUTPUT" -maxdepth 1 -name "kernels-latest-*.tar.gz" -print || true
@@ -259,9 +274,9 @@ jobs:
       - name: Aggregate all kernel-devel artifacts
         run: |
           set -eux
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          BUILD_OUTPUT="$RUNS_DIR/build-output"
+          # Artifacts downloaded by the step above land here (workspace-local,
+          # node-agnostic) instead of the old /home/runner/_shared/runs hostPath.
+          BUILD_OUTPUT="$GITHUB_WORKSPACE/build-output"
 
           mkdir -p kernel-devel-all
           for archive in "$BUILD_OUTPUT"/kernel-devel-all-*.tar.gz; do
@@ -279,11 +294,6 @@ jobs:
             kernel-devel-all.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
-
-      - name: Cleanup per-run kernel clones
-        if: always()
-        run: |
-          RUNS_PARENT="/home/runner/_shared/runs"
-          RUNS_DIR="$RUNS_PARENT/$GITHUB_RUN_ID"
-          echo "Cleaning up kernel clones in $RUNS_DIR"
-          rm -rf "$RUNS_DIR"
+      # (Removed the per-run /home/runner/_shared/runs cleanup: outputs now flow
+      # through workflow artifacts, which expire on their own retention, and the
+      # workspace build-output dir is ephemeral.)
