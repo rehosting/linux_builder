@@ -280,6 +280,33 @@ for TARGET in $TARGETS; do
         cp "$KERNEL_SRC/Kconfig" "$OUTDIR/" || true
         # Ensure fixdep is present for out-of-tree module builds
         cp -r "$KBUILD_DIR/scripts/" "$OUTDIR/scripts/" || true
+
+        # --- Slim the staged devel tree -------------------------------------
+        # An out-of-tree module build (make -C $KDIR M=$PWD modules) only needs
+        # the modules_prepare result: Makefile/.config/Module.symvers, headers
+        # (include/, arch/<arch>/include), arch Makefiles, and scripts/ host
+        # tools. It does not read boot images, prebuilt build objects, or most
+        # of tools/, so drop them -- this cuts the per-target devel archive
+        # ~75-85% (e.g. x86_64 ~605MB -> ~100MB uncompressed).
+        #
+        # NOTE: the `rm -rf "$OUTDIR/arch/${short_arch}/boot"` above is a no-op
+        # for x86_64 (real arch dir is arch/x86, but short_arch is "x86_64"), so
+        # the full arch/x86/boot (~120MB of bzImage/vmlinux) used to ship. The
+        # arch/*/boot glob here removes it properly for every arch.
+        rm -rf "$OUTDIR"/arch/*/boot "$OUTDIR"/arch/*/realmode || true
+        # Keep tools/objtool (kbuild may run it on module objects when
+        # CONFIG_OBJTOOL=y); drop the rest of tools/ (perf, testing, bpf = bulk).
+        if [ -d "$OUTDIR/tools" ]; then
+          find "$OUTDIR/tools" -mindepth 1 -maxdepth 1 ! -name objtool -exec rm -rf {} + || true
+        fi
+        # Drop build leftovers. Keep arch/powerpc/lib/crtsavres.o (igloo_driver
+        # links it for ppc targets) and everything under scripts/ and tools/
+        # (host tools needed for the external-module build).
+        find "$OUTDIR" -name '*.cmd' -delete || true
+        find "$OUTDIR" -name '*.o' \
+          ! -path '*/arch/powerpc/lib/crtsavres.o' \
+          ! -path '*/scripts/*' \
+          ! -path '*/tools/*' -delete || true
       ) &
       
       # Store the PID of the background process
