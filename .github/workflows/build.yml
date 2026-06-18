@@ -1,15 +1,28 @@
 name: Compile and release
 
 on:
+  # Releases are cut on merges into main and on dev_* tags (auto-versioned
+  # below, like rehosting/penguin). NOTE: we deliberately do NOT trigger on
+  # 'v*' tags — the release step now *creates* v* tags via version-increment,
+  # so a 'v*' push trigger would make every release re-trigger itself.
   push:
+    branches:
+      - main
     tags:
-      - 'v*'
+      - 'dev_*'
 
   pull_request:
     branches:
       - main
 
   workflow_dispatch:
+
+# Serialize per-ref so two main merges (or a merge + dev_* tag) can't race the
+# auto-version step and compute/claim the same vX.Y.Z tag. PR runs cancel their
+# own superseded runs; release (push) runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prebuild:
@@ -149,8 +162,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
+          # Do NOT pin image=moby/buildkit:master here. A recent master
+          # regressed on the self-hosted runners (kernel 5.4):
+          #   runc run failed: ... can't mask dir "/proc/acpi": mount ...
+          #   MS_RDONLY ... invalid argument
+          # which fails the first RUN that needs container init. Letting buildx
+          # use its default pinned-stable buildkit avoids it. network=host and
+          # the registry config are kept. (Mirrors rehosting/penguin c35bedc5.)
           driver-opts: |
-            image=moby/buildkit:master
             network=host
           buildkitd-config-inline: |
             [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
@@ -205,7 +224,11 @@ jobs:
           retention-days: 1
 
   aggregate:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Runs on releases (push to main / dev_* tag) AND on manual dispatch so the
+    # full download+combine round-trip can be exercised without cutting a
+    # release (the publish step below is gated to push events only). Never runs
+    # for pull_request.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: rehosting-arc
     env:
@@ -286,14 +309,31 @@ jobs:
           done
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
 
+      # Auto-version like rehosting/penguin: query the GitHub API for the latest
+      # release and increment. On main this yields a clean vX.Y.Z; on a non-main
+      # ref (a dev_* tag) version-increment appends a -pre suffix.
+      - name: Get next version
+        id: version
+        uses: reecetech/version-increment@2023.10.1
+        with:
+          use_api: true
+
       - name: Create and publish release
+        # Only publish on real release events (main merge / dev_* tag). A manual
+        # workflow_dispatch still runs everything above to validate the pipeline
+        # but does not create a release.
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: |
             kernels-latest.tar.gz
             kernel-devel-all.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          generate_release_notes: true
+          # dev_* tags publish as prereleases; main merges as full releases.
+          prerelease: ${{ startsWith(github.ref, 'refs/tags/dev_') }}
       # (Removed the per-run /home/runner/_shared/runs cleanup: outputs now flow
       # through workflow artifacts, which expire on their own retention, and the
       # workspace build-output dir is ephemeral.)
