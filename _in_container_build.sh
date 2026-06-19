@@ -307,6 +307,13 @@ for TARGET in $TARGETS; do
           ! -path '*/arch/powerpc/lib/crtsavres.o' \
           ! -path '*/scripts/*' \
           ! -path '*/tools/*' -delete || true
+        # Drop kernel .c source too: an `M=` external-module build compiles the
+        # module's own sources against prebuilt objects + headers, never the
+        # in-tree .c. Keep scripts/ and tools/ sources in case a host tool needs
+        # a rebuild.
+        find "$OUTDIR" -name '*.c' \
+          ! -path '*/scripts/*' \
+          ! -path '*/tools/*' -delete || true
       ) &
       
       # Store the PID of the background process
