@@ -2,9 +2,9 @@ name: Compile and release
 
 on:
   # Releases are cut on merges into main and on dev_* tags (auto-versioned
-  # below, like rehosting/penguin). NOTE: we deliberately do NOT trigger on
-  # 'v*' tags — the release step now *creates* v* tags via version-increment,
-  # so a 'v*' push trigger would make every release re-trigger itself.
+  # below). NOTE: we deliberately do NOT trigger on 'v*' tags — the release
+  # step itself *creates* v* tags, so a 'v*' push trigger would make every
+  # release re-trigger itself.
   push:
     branches:
       - main
@@ -321,14 +321,31 @@ jobs:
           done
           tar -czvf kernel-devel-all.tar.gz -C kernel-devel-all .
 
-      # Auto-version like rehosting/penguin: query the GitHub API for the latest
-      # release and increment. On main this yields a clean vX.Y.Z; on a non-main
-      # ref (a dev_* tag) version-increment appends a -pre suffix.
+      # Auto-version: continue the v3.6.x line monotonically. We compute the
+      # next patch deterministically from the existing v3.6.* tags rather than
+      # using reecetech/version-increment, whose base detection mis-derived
+      # v3.3.11 from the legacy v3.5.x-beta tag history. First release is
+      # v3.6.1; each subsequent release bumps the patch (v3.6.2, v3.6.3, ...).
+      # To start a new minor line later, bump MAJOR_MINOR below.
       - name: Get next version
         id: version
-        uses: reecetech/version-increment@2023.10.1
-        with:
-          use_api: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          MAJOR_MINOR="3.6"
+          latest_patch=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${MAJOR_MINOR}." \
+            --jq '.[].ref' 2>/dev/null \
+            | sed -E "s#refs/tags/v${MAJOR_MINOR}\.##" \
+            | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+          if [ -z "${latest_patch}" ]; then
+            NEXT="v${MAJOR_MINOR}.1"
+          else
+            NEXT="v${MAJOR_MINOR}.$((latest_patch + 1))"
+          fi
+          echo "v-version=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "Next version: ${NEXT}"
 
       - name: Create and publish release
         # Only publish on real release events (main merge / dev_* tag). A manual
