@@ -30,7 +30,6 @@ jobs:
     outputs:
       targets: ${{ steps.find_targets.outputs.targets }}
       versions: ${{ steps.find_targets.outputs.versions }}
-      sources_dir: ${{ steps.setup_sources.outputs.sources_dir }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,60 +44,11 @@ jobs:
           echo
           echo "Full submodule SHAs:" && git submodule foreach 'echo $name: $(git rev-parse HEAD)'
 
-      - name: Ensure local bare clone of base Linux repo
-        run: |
-          set -eux
-          BASE_REPO_DIR="/home/runner/_shared/linux"
-          BASE_REPO_URL="https://github.com/rehosting/linux"
-
-
-          # Clone bare base repo if missing
-          if [ ! -d "$BASE_REPO_DIR" ]; then
-            echo "Cloning bare base repo to $BASE_REPO_DIR"
-            git clone --bare "$BASE_REPO_URL" "$BASE_REPO_DIR"
-            cd $BASE_REPO_DIR && git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-          fi
-          # Always fetch latest from upstream
-          cd "$BASE_REPO_DIR" && git fetch origin --prune --tags --force
-
-      - name: Ensure linux cache exists
-        run: |
-          BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
-
-          if [ ! -d "$BASE_CACHE_DIR" ]; then
-            mkdir -p "$BASE_CACHE_DIR"
-          fi
-      - name: Install rsync
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rsync
-      - name: Setup shared Linux kernel sources
-        id: setup_sources
-        run: |
-          set -eux
-
-          SOURCES_DIR="/home/runner/_shared/linux_sources/"
-          echo "Using stable source directory: $SOURCES_DIR"
-          echo "sources_dir=$SOURCES_DIR" >> $GITHUB_OUTPUT
-
-          # Ensure the stable directory exists and copy the entire repo into it.
-          # The --delete flag keeps the destination in sync with the source.
-          mkdir -p "$SOURCES_DIR"
-          rsync -a --delete . "$SOURCES_DIR/"
-
-          # Change into the stable directory to perform all subsequent git operations
-          cd "$SOURCES_DIR"
-
-          BASE_REPO_DIR="/home/runner/_shared/linux"
-          sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
-
-          # Sync and update submodules from within the stable repository
-          git submodule sync
-          GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2
-
-          # Use rsync to move the linux directory into the stable location
-          # This is more robust than mv and helps preserve attributes.
-          rsync -a --delete linux/ "$SOURCES_DIR/linux/"
+      # NOTE: kernel-source preparation used to live here and wrote to the shared
+      # hostPath on prebuild's node, which forced every build job onto that same
+      # node. It now happens per-node inside each build job (see "Ensure kernel
+      # sources on this node" below), so prebuild only needs to discover the
+      # build matrix -- nothing node-specific.
 
       - name: Find valid targets and versions sets
         id: find_targets
@@ -145,6 +95,67 @@ jobs:
           TARGET="${{ matrix.target_version }}"
           echo "target=$TARGET" >> $GITHUB_OUTPUT
           echo "Building target: $TARGET"
+
+      - name: Ensure kernel sources on this node
+        id: sources
+        run: |
+          set -eux
+          SHARED="/home/runner/_shared"
+          BASE_REPO_DIR="$SHARED/linux"
+          BASE_REPO_URL="https://github.com/rehosting/linux"
+          SRC_PARENT="$SHARED/linux_sources"
+          mkdir -p "$SRC_PARENT"
+
+          # Cache key = the pinned linux/<ver> submodule SHAs. The kernel source
+          # only changes when a submodule is bumped, so a node reuses its tree
+          # across runs and only re-populates on a real SHA change.
+          KEY=$(git submodule status | awk '{gsub(/^[-+U ]+/,"",$1); print $1}' | sort | sha1sum | cut -c1-12)
+          SRC_ROOT="$SRC_PARENT/$KEY"
+          echo "kernel_src=$SRC_ROOT/linux" >> "$GITHUB_OUTPUT"
+
+          # Per-node arbitration: whichever build job lands on a node first
+          # populates that node's copy; the others block on the lock, then see
+          # .ready and skip. flock on the shared fs is the right primitive --
+          # GH 'concurrency' is cross-node and can't serialize same-node jobs.
+          # This also avoids the cp/rsync races the single shared dir hit.
+          exec 9>"$SRC_PARENT/.populate.lock"
+          flock 9
+
+          if [ ! -e "$SRC_ROOT/.ready" ]; then
+            echo "Populating kernel sources for key $KEY on $(hostname)"
+            # Node-local bare clone so submodule update pulls over fast local
+            # file:// instead of hitting GitHub once per submodule per job.
+            if [ ! -d "$BASE_REPO_DIR" ]; then
+              git clone --bare "$BASE_REPO_URL" "$BASE_REPO_DIR"
+              git -C "$BASE_REPO_DIR" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+            fi
+            git -C "$BASE_REPO_DIR" fetch origin --prune --tags --force
+
+            rm -rf "$SRC_ROOT.tmp"
+            mkdir -p "$SRC_ROOT.tmp"
+            # Copy the (submodule-less) superproject checkout, then init the
+            # kernel submodules into it from the local bare clone.
+            cp -a "$GITHUB_WORKSPACE/." "$SRC_ROOT.tmp/"
+            ( cd "$SRC_ROOT.tmp"
+              sed -i "s|url = https://github.com/rehosting/linux.git|url = file://$BASE_REPO_DIR|g" .gitmodules
+              git submodule sync
+              GIT_ALLOW_PROTOCOL=file:https git submodule update --init --depth 1 --jobs 2 )
+            # Publish atomically so a partial tree is never seen as ready.
+            rm -rf "$SRC_ROOT"
+            mv "$SRC_ROOT.tmp" "$SRC_ROOT"
+            touch "$SRC_ROOT/.ready"
+          else
+            echo "Reusing cached kernel sources for key $KEY on $(hostname)"
+          fi
+          # Record last-use so the GC below doesn't reap an actively-reused tree.
+          touch "$SRC_ROOT"
+
+          # Best-effort GC: drop keyed trees (and stale .tmp dirs) untouched for
+          # 14 days so the node-local cache can't grow unbounded across bumps.
+          find "$SRC_PARENT" -mindepth 1 -maxdepth 1 -type d ! -path "$SRC_ROOT" -mtime +14 \
+            -exec rm -rf {} + 2>/dev/null || true
+
+          flock -u 9
 
       - name: Trust Harbor's self-signed certificate
         run: |
@@ -196,9 +207,10 @@ jobs:
             set -eux
             TARGET="${{ matrix.target_version }}"
             VERSIONS_JSON='${{ needs.prebuild.outputs.versions }}'
-            # BASE_CACHE_DIR="/home/runner/_shared/linux_builder/cache"
-            # Use the output from the prebuild job
-            SOURCES_DIR="${{ needs.prebuild.outputs.sources_dir }}/linux"
+            # Per-node kernel sources prepared by the "Ensure kernel sources on
+            # this node" step above (node-agnostic: no dependency on prebuild's
+            # node).
+            SOURCES_DIR="${{ steps.sources.outputs.kernel_src }}"
 
             if [ -z "$VERSIONS_JSON" ] || [ "$VERSIONS_JSON" = "[]" ]; then
               VERSIONS=""
