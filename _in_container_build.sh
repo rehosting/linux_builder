@@ -2,6 +2,20 @@
 
 set -eu
 
+# Re-own bind-mounted outputs to the host caller so artifacts/cache aren't left
+# root-owned on the host. Runs as root inside the container via an EXIT trap so
+# it covers every exit path (including the early kernel-devel exit). Gated on a
+# non-root HOST_UID, so CI (which may run as root / not set these) is unaffected.
+fix_ownership() {
+  if [ -n "${HOST_UID:-}" ] && [ "${HOST_UID}" != "0" ]; then
+    chown -R "${HOST_UID}:${HOST_GID:-$HOST_UID}" \
+      /tmp/build \
+      /app/kernels-latest.tar.gz \
+      /app/kernel-devel-all.tar.gz 2>/dev/null || true
+  fi
+}
+trap fix_ownership EXIT
+
 # We want to build linux for each of our targets and versions using the config files. Linux is in /app/linux/[version]
 # while our configs are at configs/[version]/[arch]. We need to set the ARCH and CROSS_COMPILE variables
 # and put the binaries in /app/binaries

@@ -143,6 +143,7 @@ mkdir -p "$CACHE_HOST_DIR"
 docker run $INTERACTIVE \
     --rm -v "$CACHE_HOST_DIR":/tmp/build \
     -v "$PWD":/app \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     $EXTRA_DOCKER_OPTS \
     "$IMAGE" \
     bash /app/_in_container_build.sh \
