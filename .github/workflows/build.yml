@@ -194,13 +194,23 @@ jobs:
           push: false
           tags: |
             rehosting/linux_builder:latest
+          # TARGET=latest builds FROM the all-arch embedded-toolchains:latest
+          # instead of a per-target base. Per-target was a pull-cost optimization;
+          # on the shared per-node Docker daemon the base is loaded once per node
+          # and reused warm, so pulling all toolchains is cheap. It also makes the
+          # built image target-agnostic, so concurrent matrix jobs sharing the
+          # daemon's `:latest` tag can't hand a job an image missing its
+          # cross-compiler (every image now has every toolchain). The kernel build
+          # target is still selected per-job via `build.sh --targets`.
           build-args: |
             REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-            TARGET=${{ matrix.target_version }}
+            TARGET=latest
+          # Single shared build cache now that the image is target-agnostic
+          # (was per-target: ${matrix.target_version}_cache).
           cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
           cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:${{ matrix.target_version }}_cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
           outputs: type=docker
       - name: Build Kernel for ${{ matrix.target_version }}
         run: |
