@@ -74,14 +74,88 @@ jobs:
           echo "Found valid targets: $TARGETS_OUTPUT"
           echo "Found valid versions: $VERSIONS_OUTPUT"
 
+  # Build the kernel_builder image exactly once per run, push it to Harbor
+  # under an immutable per-commit tag, and let every matrix build job pull it.
+  #
+  # Why a dedicated job (instead of building inside each matrix job):
+  #   * The image is now target-agnostic (TARGET=latest bundles every
+  #     cross-toolchain), so all 13 build jobs would otherwise rebuild the SAME
+  #     multi-GB image. setup-buildx-action's docker-container driver keeps its
+  #     own cache store, separate from the shared per-node Docker daemon, so the
+  #     daemon's warm-image reuse does NOT cover a buildx `FROM` base -- every
+  #     job re-pulled the full all-arch base. Building once here fixes that.
+  #   * A single writer to the `:all_cache` registry cache means the cache
+  #     actually accumulates run-to-run instead of 13 jobs racing to overwrite
+  #     one ref.
+  #   * An immutable `:<sha>` tag (vs a mutable `:latest`) is safe on the shared
+  #     daemon's single image store -- concurrent jobs/PRs can't clobber each
+  #     other's tag (same lesson as rehosting/penguin #893).
+  build-image:
+    runs-on: rehosting-arc
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust Harbor's self-signed certificate
+        run: |
+          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
+          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
+          sudo update-ca-certificates
+
+      - name: Log in to Rehosting Arc Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
+          username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
+          password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # See the note in the (removed) per-job build step / penguin c35bedc5:
+          # don't pin moby/buildkit:master -- it regressed on the kernel-5.4
+          # runners (can't mask /proc/acpi). Default pinned-stable buildkit + the
+          # insecure Harbor registry config.
+          driver-opts: |
+            network=host
+          buildkitd-config-inline: |
+            [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
+              insecure = true
+              http = true
+
+      - name: Build and push kernel_builder image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Immutable per-commit tag -- matrix jobs pull this exact ref.
+          tags: |
+            ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.sha }}
+          # TARGET=latest builds FROM the all-arch embedded-toolchains:latest so
+          # the single built image carries every cross-toolchain and one image
+          # serves every matrix target.
+          build-args: |
+            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
+            TARGET=latest
+          # Single shared build cache, written by this one job (no matrix race).
+          cache-from: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
+          cache-to: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
+
   build:
-    needs: prebuild
+    needs: [prebuild, build-image]
     runs-on: rehosting-arc
     if: github.event.pull_request.draft == false
 
     strategy:
       matrix:
         target_version: ${{ fromJSON(needs.prebuild.outputs.targets) }}
+
+    env:
+      # The image built once by build-image; pulled (warm on the shared daemon
+      # after the first job lands on a node) instead of rebuilt per target.
+      KERNEL_BUILDER_IMAGE: ${{ secrets.REHOSTING_ARC_REGISTRY }}/rehosting/linux_builder:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -170,48 +244,15 @@ jobs:
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          # Do NOT pin image=moby/buildkit:master here. A recent master
-          # regressed on the self-hosted runners (kernel 5.4):
-          #   runc run failed: ... can't mask dir "/proc/acpi": mount ...
-          #   MS_RDONLY ... invalid argument
-          # which fails the first RUN that needs container init. Letting buildx
-          # use its default pinned-stable buildkit avoids it. network=host and
-          # the registry config are kept. (Mirrors rehosting/penguin c35bedc5.)
-          driver-opts: |
-            network=host
-          buildkitd-config-inline: |
-            [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
-              insecure = true
-              http = true
+      - name: Pull kernel_builder image
+        run: |
+          set -eux
+          # Built once by the build-image job. On the shared per-node Docker
+          # daemon the first matrix job to land on a node pulls the layers; every
+          # later job on that node finds them already present (warm reuse). No
+          # per-job buildx build anymore.
+          docker pull "$KERNEL_BUILDER_IMAGE"
 
-      - name: Build kernel_builder docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          tags: |
-            rehosting/linux_builder:latest
-          # TARGET=latest builds FROM the all-arch embedded-toolchains:latest
-          # instead of a per-target base. Per-target was a pull-cost optimization;
-          # on the shared per-node Docker daemon the base is loaded once per node
-          # and reused warm, so pulling all toolchains is cheap. It also makes the
-          # built image target-agnostic, so concurrent matrix jobs sharing the
-          # daemon's `:latest` tag can't hand a job an image missing its
-          # cross-compiler (every image now has every toolchain). The kernel build
-          # target is still selected per-job via `build.sh --targets`.
-          build-args: |
-            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-            TARGET=latest
-          # Single shared build cache now that the image is target-agnostic
-          # (was per-target: ${matrix.target_version}_cache).
-          cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
-          cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/linux_builder:all_cache,mode=max
-          outputs: type=docker
       - name: Build Kernel for ${{ matrix.target_version }}
         run: |
             set -eux
@@ -228,8 +269,9 @@ jobs:
               VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
             fi
 
-            # Mount the stable source directory instead of the run-specific one
-            ./build.sh --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
+            # Use the prebuilt image (--image) and mount the stable source
+            # directory instead of the run-specific one.
+            ./build.sh --image "$KERNEL_BUILDER_IMAGE" --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
 
             # Stage per-target outputs in the workspace; they are handed to the
             # aggregate job via workflow artifacts (below) instead of a shared
