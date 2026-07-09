@@ -6,7 +6,14 @@ set -eu
 # root-owned on the host. Runs as root inside the container via an EXIT trap so
 # it covers every exit path (including the early kernel-devel exit). Gated on a
 # non-root HOST_UID, so CI (which may run as root / not set these) is unaffected.
-fix_ownership() {
+on_exit() {
+  # ccache summary on every exit path (there are several early exits:
+  # config-only, menuconfig, diffdefconfig, kernel-devel). No-op unless ccache
+  # is enabled.
+  if [ -n "${CCACHE_DIR:-}" ]; then
+    echo "ccache stats after build:"
+    ccache -s 2>/dev/null | sed 's/^/  ccache(end): /' || true
+  fi
   if [ -n "${HOST_UID:-}" ] && [ "${HOST_UID}" != "0" ]; then
     chown -R "${HOST_UID}:${HOST_GID:-$HOST_UID}" \
       /tmp/build \
@@ -14,7 +21,7 @@ fix_ownership() {
       /app/kernel-devel-all.tar.gz 2>/dev/null || true
   fi
 }
-trap fix_ownership EXIT
+trap on_exit EXIT
 
 # We want to build linux for each of our targets and versions using the config files. Linux is in /app/linux/[version]
 # while our configs are at configs/[version]/[arch]. We need to set the ARCH and CROSS_COMPILE variables
@@ -393,11 +400,6 @@ if [ "$KERNEL_DEVEL" = "true" ]; then
   # Create the tar directly from the minimal-devel directory using pigz for parallel compression
   tar cf - -C /minimal-devel . | pigz > /app/kernel-devel-all.tar.gz
   exit 0
-fi
-
-if [ -n "${CCACHE_DIR:-}" ]; then
-    echo "ccache stats after build:"
-    ccache -s 2>/dev/null | sed 's/^/  ccache(end): /' || true
 fi
 
 # Ensure cache can be read/written by host
