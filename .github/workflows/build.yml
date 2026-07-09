@@ -269,9 +269,21 @@ jobs:
               VERSIONS=$(echo "$VERSIONS_JSON" | jq -r '.[]' | xargs)
             fi
 
+            # Node-shared, persistent compiler cache. Lives under the same
+            # /home/runner/_shared mount the kernel sources use (mirrored into the
+            # shared Docker daemon by kube#15), so mounting it into the build
+            # container needs no extra plumbing. One dir shared by every
+            # target/version on the node -- ccache is content-keyed and dedups, so
+            # a warm cache turns the ~15-20 min from-scratch compile into a mostly-
+            # cache-hit rebuild. _in_container_build.sh enables ccache iff CCACHE_DIR
+            # is set (no-op otherwise).
+            CCACHE_HOST_DIR="/home/runner/_shared/linux_builder_ccache"
+            mkdir -p "$CCACHE_HOST_DIR"
+
             # Use the prebuilt image (--image) and mount the stable source
-            # directory instead of the run-specific one.
-            ./build.sh --image "$KERNEL_BUILDER_IMAGE" --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} --extra-docker-opts "-v $SOURCES_DIR:/app/linux"
+            # directory instead of the run-specific one, plus the shared ccache.
+            ./build.sh --image "$KERNEL_BUILDER_IMAGE" --targets "$TARGET" ${VERSIONS:+--versions "$VERSIONS"} \
+              --extra-docker-opts "-v $SOURCES_DIR:/app/linux -v $CCACHE_HOST_DIR:/ccache -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=15G"
 
             # Stage per-target outputs in the workspace; they are handed to the
             # aggregate job via workflow artifacts (below) instead of a shared

@@ -36,6 +36,29 @@ echo "No strip: $NO_STRIP"
 echo "menuconfig: $MENU_CONFIG"
 echo "diffdefconfig: $DIFFDEFCONFIG"
 
+# Optional compiler cache. Enabled purely by the presence of CCACHE_DIR (set by
+# the caller, e.g. CI mounts a node-shared persistent dir). When unset, CC_PREFIX
+# stays empty and every `CC=` below expands to exactly the kernel default
+# ($(CROSS_COMPILE)gcc), so behaviour is identical to before. ccache is content-
+# keyed, so it survives `mrproper`/clean and stays correct across config and
+# source bumps; concurrent build jobs sharing one CCACHE_DIR are safe (ccache
+# locks internally). The container paths ($O=/tmp/build/..., src /app/linux) are
+# stable across runs, which is what lets objects hit.
+CC_PREFIX=""
+if [ -n "${CCACHE_DIR:-}" ]; then
+    mkdir -p "$CCACHE_DIR"
+    export CCACHE_DIR
+    export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-15G}"
+    export CCACHE_COMPRESS=1
+    # __DATE__/__TIME__ and header mtimes churn across a fresh checkout; treat
+    # them as sloppy so unchanged translation units still hit.
+    export CCACHE_SLOPPINESS="${CCACHE_SLOPPINESS:-time_macros,include_file_mtime,include_file_ctime,file_stat_matches}"
+    ccache -M "$CCACHE_MAXSIZE" >/dev/null 2>&1 || true
+    CC_PREFIX="ccache "
+    echo "ccache enabled: dir=$CCACHE_DIR maxsize=$CCACHE_MAXSIZE"
+    ccache -s 2>/dev/null | sed 's/^/  ccache(start): /' || true
+fi
+
 # Array to keep track of child processes
 declare -a pids
 
@@ -159,13 +182,13 @@ for TARGET in $TARGETS; do
         /app/linux/${VERSION}/scripts/diffconfig /tmp/original_config /tmp/build/${VERSION}/${TARGET}/.config
         exit
       fi
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) CC="${CC_PREFIX}$(get_cc $TARGET $VERSION)gcc" O=/tmp/build/${VERSION}/${TARGET}/ $BUILD_TARGETS -j$(nproc)
 
       # Always run modules_prepare to ensure headers and Module.symvers are generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) CC="${CC_PREFIX}$(get_cc $TARGET $VERSION)gcc" O=/tmp/build/${VERSION}/${TARGET}/ modules_prepare
 
       # Build modules to ensure Module.symvers is generated
-      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
+      make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) CC="${CC_PREFIX}$(get_cc $TARGET $VERSION)gcc" O=/tmp/build/${VERSION}/${TARGET}/ modules -j$(nproc)
       
       # Prepare and completely clean the output directory for perf
       PERF_OUTDIR="/tmp/build/${VERSION}/${TARGET}/tools/perf/"
@@ -184,6 +207,7 @@ for TARGET in $TARGETS; do
       make -C /app/linux/$VERSION/tools/perf \
           ARCH=${short_arch} \
           CROSS_COMPILE=$(get_cc $TARGET $VERSION) \
+          CC="${CC_PREFIX}$(get_cc $TARGET $VERSION)gcc" \
           LD="$PERF_LD" \
           OUTPUT="$PERF_OUTDIR" \
           LDFLAGS="-static" \
@@ -369,6 +393,11 @@ if [ "$KERNEL_DEVEL" = "true" ]; then
   # Create the tar directly from the minimal-devel directory using pigz for parallel compression
   tar cf - -C /minimal-devel . | pigz > /app/kernel-devel-all.tar.gz
   exit 0
+fi
+
+if [ -n "${CCACHE_DIR:-}" ]; then
+    echo "ccache stats after build:"
+    ccache -s 2>/dev/null | sed 's/^/  ccache(end): /' || true
 fi
 
 # Ensure cache can be read/written by host
