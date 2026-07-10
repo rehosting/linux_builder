@@ -127,8 +127,38 @@ else
     CACHE_HOST_DIR="$CACHE_DIR"
 fi
 
+# Bind-mount source translation for a shared Docker daemon (opt-in, pure
+# no-op otherwise).
+#
+# Normally dockerd shares this script's mount namespace, so a bind-mount
+# source path ("$PWD", the cache dir) means the same thing to the daemon as
+# to us. Under a shared per-node daemon (e.g. rehosting CI's shared-docker
+# runners) it does NOT: the daemon can't see this runner's per-pod workspace
+# under /home/runner/_work, so "-v $PWD:/app" would mount an empty dir and the
+# build would fail with "/app/_in_container_build.sh: No such file". The runner
+# exports PENGUIN_HOST_MOUNT_FROM / PENGUIN_HOST_MOUNT_TO (the same mechanism
+# penguin's wrapper uses) giving the daemon-visible location of that workspace.
+#
+# rewrite_mount() rewrites a bind source ONLY when BOTH env vars are set and
+# the path is under _FROM. When they're unset — every local build and every
+# GitHub-hosted runner — it returns the path unchanged, so behaviour is
+# identical to before. (Sources outside _FROM, e.g. the kernel-source cache
+# under /home/runner/_shared, are left as-is; the shared daemon mirrors that
+# node-shared path directly.)
+rewrite_mount() {
+    local path="$1"
+    if [[ -n "$PENGUIN_HOST_MOUNT_FROM" && -n "$PENGUIN_HOST_MOUNT_TO" \
+          && "$path" == "$PENGUIN_HOST_MOUNT_FROM"* ]]; then
+        printf '%s' "${PENGUIN_HOST_MOUNT_TO}${path#"$PENGUIN_HOST_MOUNT_FROM"}"
+    else
+        printf '%s' "$path"
+    fi
+}
+CACHE_MOUNT_SRC="$(rewrite_mount "$CACHE_HOST_DIR")"
+APP_MOUNT_SRC="$(rewrite_mount "$PWD")"
+
 if $CLEAR_CACHE; then
-    docker run --rm -v "$CACHE_HOST_DIR":/tmp/build -v "$PWD":/app pandare/kernel_builder /bin/bash -c "rm -rf /tmp/build/*"
+    docker run --rm -v "$CACHE_MOUNT_SRC":/tmp/build -v "$APP_MOUNT_SRC":/app pandare/kernel_builder /bin/bash -c "rm -rf /tmp/build/*"
     exit
 fi
 
@@ -141,8 +171,8 @@ fi
 mkdir -p "$CACHE_HOST_DIR"
 
 docker run $INTERACTIVE \
-    --rm -v "$CACHE_HOST_DIR":/tmp/build \
-    -v "$PWD":/app \
+    --rm -v "$CACHE_MOUNT_SRC":/tmp/build \
+    -v "$APP_MOUNT_SRC":/app \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     $EXTRA_DOCKER_OPTS \
     "$IMAGE" \
