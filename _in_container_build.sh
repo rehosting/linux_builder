@@ -170,7 +170,10 @@ for TARGET in $TARGETS; do
       echo "Linting config for $TARGET to config_${VERSION}_${TARGET}.linted"
       make -C /app/linux/$VERSION ARCH=${short_arch} CROSS_COMPILE=$(get_cc $TARGET $VERSION) O=/tmp/build/${VERSION}/${TARGET}/ savedefconfig
       cp "/tmp/build/${VERSION}/${TARGET}/defconfig" "/app/config_${VERSION}_${TARGET}.linted"
-      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d')
+      # Informational only: savedefconfig prunes defaults/dupes so the configs
+      # always differ. Don't let the non-zero exit abort the (set -e) loop, or
+      # only the first target ever gets linted in a multi-target --config-only run.
+      diff -u <(sort /tmp/build/${VERSION}/${TARGET}/.config) <(sort /tmp/build/${VERSION}/${TARGET}/defconfig | sed '/^[ #]/d') || true
     else
       echo "Building kernel for $TARGET"
       # 2. Inject missing label for x86_64 R_X86_64_PLT32 backport bug
