@@ -147,8 +147,8 @@ fi
 # node-shared path directly.)
 rewrite_mount() {
     local path="$1"
-    if [[ -n "$PENGUIN_HOST_MOUNT_FROM" && -n "$PENGUIN_HOST_MOUNT_TO" \
-          && "$path" == "$PENGUIN_HOST_MOUNT_FROM"* ]]; then
+    if [[ -n "${PENGUIN_HOST_MOUNT_FROM:-}" && -n "${PENGUIN_HOST_MOUNT_TO:-}" \
+          && "$path" == "${PENGUIN_HOST_MOUNT_FROM}"* ]]; then
         printf '%s' "${PENGUIN_HOST_MOUNT_TO}${path#"$PENGUIN_HOST_MOUNT_FROM"}"
     else
         printf '%s' "$path"
