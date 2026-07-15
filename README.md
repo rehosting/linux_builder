@@ -43,3 +43,5 @@ If you'd like to add a given option or set of options to all configs, you can ad
 
 ## Linting configs
 Before commiting any config update you MUST lint your change by running `./build.sh --config-only`. You can specify architectures to lint with the `--targets` flag, e.g., `./build.sh --config-only --targets "armel mipel"`. If the lint fails, build.sh will exit with non-zero status and print a diff containing the problems.
+
+<!-- CI trigger: load-aware scheduler burst test (throwaway PR, do not merge) -->
