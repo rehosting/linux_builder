@@ -143,6 +143,10 @@ CONFIG_KSM=y
 CONFIG_LEGACY_PTY_COUNT=16
 CONFIG_LOG_BUF_SHIFT=14
 CONFIG_MAC80211=y
+// Virtual 802.11 radio for rehosting devices whose real Wi-Fi driver (mt76 etc.) cannot
+// load on the donor kernel: a real cfg80211 phy with full nl80211 so wifi-detect/hostapd/
+// netifd bring up wlan* with no RF hardware. Built-in so the phy exists at boot. RUT2M RF model.
+CONFIG_MAC80211_HWSIM=y
 CONFIG_MAGIC_SYSRQ=y
 CONFIG_MINIX_FS=y
 CONFIG_MODULES=y
