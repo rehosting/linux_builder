@@ -44,10 +44,16 @@
       sourceLib = import ./nix/source.nix { inherit pkgs; };
       mkKernel = import ./nix/kernel.nix { inherit pkgs kernelsmith; };
 
-      # kernelsmith's arch table covers 12 arches; these two are ours and not
-      # yet in it. Listed explicitly rather than silently dropped -- see draft 34
-      # Slice 2, which lands them upstream instead of forking the table.
-      kernelsmithMissing = [ "loongarch64" "riscv64" ];
+      # Arches kernelsmith cannot resolve a toolchain for yet. Listed explicitly
+      # rather than silently dropped, so `nix build .#all` never quietly ships a
+      # smaller matrix than build.sh does.
+      #
+      # Now empty: riscv64 landed as a Bootlin k6 pin, and loongarch64 as a
+      # kernel-only gcc 13.3 (no libc toolchain exists for it from any source --
+      # see kernelsmith's matrix.k6LoongarchKernel). Kept as a mechanism rather
+      # than deleted, so a future arch gap is declared here instead of silently
+      # shrinking `nix build .#all` below what build.sh covers.
+      kernelsmithMissing = [ ];
 
       buildable = version: builtins.filter (t: !(builtins.elem t kernelsmithMissing)) matrix.${version};
 
@@ -75,6 +81,25 @@
           (buildable version))
         (builtins.attrNames matrix));
 
+      # ---- the release seam ---------------------------------------------
+      # Keep emitting the two tarballs penguin consumes today, so switching
+      # linux_builder to nix does not require touching penguin at all. Moving
+      # penguin to a flake input is a separate, later change.
+      analysisLib = import ./nix/analysis.nix { inherit pkgs; };
+      releaseLib = import ./nix/release.nix { inherit pkgs; };
+
+      # Per-cell record carrying everything the assembly needs.
+      cellRecords = version: map
+        (target:
+          let kernel = cells."kernel-${version}-${target}"; in {
+            inherit version target kernel;
+            osi = analysisLib.osiConfig { inherit kernel version target; };
+            cosi = analysisLib.cosiJson { inherit kernel version target; };
+          })
+        (buildable version);
+
+      allRecords = lib.concatMap cellRecords (builtins.attrNames matrix);
+
     in
     {
       packages.${system} = cells // {
@@ -83,6 +108,22 @@
         # Everything buildable today, in one derivation, for CI.
         all = pkgs.linkFarm "igloo-kernels-all"
           (lib.mapAttrsToList (n: v: { name = n; path = v; }) cells);
+
+        # Drop-in replacements for the Docker build's release artifacts.
+        kernels-latest = releaseLib.kernelsTarball {
+          versions = map
+            (version: {
+              inherit version;
+              dir = releaseLib.kernelsDir { inherit version; cells = cellRecords version; };
+            })
+            (builtins.attrNames matrix);
+        };
+        kernel-devel-all = releaseLib.develTarball { cells = allRecords; };
+
+        # The analysis tools, pinned. Exposed so their provenance is inspectable
+        # and so igloo_driver can reuse dwarf2json for its own ISF (it runs the
+        # same fork over igloo.ko) instead of re-deriving the pin.
+        inherit (analysisLib) dwarf2json extractKernelinfo;
       };
 
       # The patched source trees, so `nix build .#sources.x86_64-linux."6.13"`
