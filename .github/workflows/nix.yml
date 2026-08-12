@@ -1,0 +1,75 @@
+# The patch-series gate, plus a representative build per version.
+#
+# Without this gate the series model degrades silently: someone edits a tree,
+# forgets to export, and the committed series stops describing reality. "The
+# series applies cleanly to the pinned upstream tarball" is the invariant that
+# makes patches-as-source-of-truth safe.
+#
+# NOTE: not yet exercised on the self-hosted runners -- treat the runner and
+# cache wiring as a first draft to be confirmed on the first real run.
+name: nix (patch series + kernels)
+
+on:
+  pull_request:
+  push:
+    branches: [main, nix-patchset]
+  workflow_dispatch:
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  series:
+    name: series applies (${{ matrix.version }})
+    runs-on: rehosting-arc
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["4.10", "6.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      # install-nix-action trips over root-owned /nix on these runners.
+      - uses: rehosting/nix-setup@v1
+
+      - name: Fetch the pinned upstream tarball
+        id: tarball
+        run: |
+          set -euo pipefail
+          TAG=$(python3 -c "import json;print(json.load(open('patches/${{ matrix.version }}/../base.json'))['${{ matrix.version }}']['tag'])")
+          MAJOR="${TAG%%.*}"
+          URL="https://cdn.kernel.org/pub/linux/kernel/v${MAJOR}.x/linux-${TAG}.tar.xz"
+          echo "path=$(nix-prefetch-url --print-path "$URL" | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Series applies cleanly to pristine upstream
+        run: ./scripts/verify-series.sh "${{ matrix.version }}" "${{ steps.tarball.outputs.path }}"
+
+  build:
+    name: build ${{ matrix.cell }}
+    runs-on: rehosting-arc
+    needs: series
+    strategy:
+      fail-fast: false
+      matrix:
+        # One cell per version keeps the gate fast; `nix build .#all` covers the
+        # full 18-cell matrix on dispatch/release.
+        cell: ["kernel-4.10-armel", "kernel-6.13-armel"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rehosting/nix-setup@v1
+
+      - name: Build
+        run: nix build --print-out-paths ".#packages.x86_64-linux.\"${{ matrix.cell }}\""
+
+      # Populate the cache from PRs too. Pushing only on release is why cross
+      # toolchain closures get rebuilt from source (~68 min observed elsewhere
+      # in this stack) instead of substituted.
+      - name: Push to Cachix
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          nix profile install nixpkgs#cachix
+          nix build --print-out-paths ".#packages.x86_64-linux.\"${{ matrix.cell }}\"" \
+            | cachix push rehosting-tools

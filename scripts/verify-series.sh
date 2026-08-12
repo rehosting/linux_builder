@@ -18,10 +18,13 @@
 # regression and fails the run.
 set -euo pipefail
 
-VERSION="${1:?usage: verify-series.sh <version> <tarball> <fork-ref> <git-dir>}"
+VERSION="${1:?usage: verify-series.sh <version> <tarball> [<fork-ref> <git-dir>]}"
 TARBALL="${2:?}"
-FORK_REF="${3:?}"
-GIT_DIR="${4:?path to a clone of rehosting/linux holding <fork-ref>}"
+# Optional: compare against the fork branch being replaced. This is a MIGRATION
+# check -- once the branches are retired there is nothing to compare to, and the
+# permanent invariant CI enforces is simply "the series applies cleanly".
+FORK_REF="${3:-}"
+GIT_DIR="${4:-}"
 
 # Paths upstream marks export-ignore, so they are absent from release tarballs.
 # Anything else in the final diff is a genuine mismatch.
@@ -56,6 +59,12 @@ while read -r p; do
 done < "$PATCHES/$VERSION/series"
 
 echo ">>> patched tree: $(git rev-parse HEAD^{tree})"
+
+if [ -z "$FORK_REF" ]; then
+    echo "PASS: $n patches applied cleanly to pristine linux-${VERSION}"
+    echo "      (no fork ref given; skipping migration comparison)"
+    exit 0
+fi
 
 git remote add fork "$GIT_DIR"
 git fetch -q --depth 60 fork "+${FORK_REF}:refs/heads/forkref"
