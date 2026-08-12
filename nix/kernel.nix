@@ -4,10 +4,15 @@
 # toolchain resolved by kernelsmith instead of an unpinned musl.cc download.
 #
 # Two outputs:
-#   out    -- vmlinux, the arch's boot artifact, Module.symvers
-#   devel  -- the kernel-devel tree out-of-tree modules build against
+#   out  -- vmlinux, the arch's boot artifact, Module.symvers
+#   dev  -- the kernel-devel tree out-of-tree modules build against
 #
-# The `devel` output is the point of the whole exercise: igloo_driver consumes
+# The dev output MUST be called "dev": nixpkgs' multiple-outputs setup hook
+# relocates include/ to `outputDev`, which falls back to "out" when no output is
+# literally named "dev". Naming it "devel" therefore silently moved include/
+# into $out and produced a devel tree that could not build a module.
+#
+# The `dev` output is the point of the whole exercise: igloo_driver consumes
 # it as a DERIVATION INPUT, so a different kernel is a different hash and a
 # stale-CRC .ko cannot be produced. Note kernelsmith's own buildKernel installs
 # `headers_install` output as kernel-devel -- those are UAPI headers, NOT the
@@ -79,7 +84,7 @@ pkgs.stdenv.mkDerivation {
   inherit version;
   name = "igloo-kernel-${version}-${target}";
 
-  outputs = [ "out" "devel" ];
+  outputs = [ "out" "dev" ];
   dontUnpack = true;
   enableParallelBuilding = true;
 
@@ -133,7 +138,7 @@ pkgs.stdenv.mkDerivation {
     # build (make -C $KDIR M=$PWD modules) needs Makefile/.config/Module.symvers,
     # headers, arch Makefiles and scripts/ host tools -- not boot images or the
     # bulk of tools/.
-    D=$devel
+    D=$dev
     mkdir -p $D
     cp build/.config build/Module.symvers $D/
     cp linux/Makefile linux/Kconfig $D/ || true
