@@ -1,0 +1,27 @@
+From ececf18586bf592e75f5a044e65fce1eebc672a4 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sat, 20 Sep 2025 18:08:55 -0400
+Subject: [PATCH 25/38] osi_notifier: 4.10 compliance
+
+---
+ drivers/igloobase/osi_notifier.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/igloobase/osi_notifier.c b/drivers/igloobase/osi_notifier.c
+index b9ed55d799..9d02d2f8ae 100644
+--- a/drivers/igloobase/osi_notifier.c
++++ b/drivers/igloobase/osi_notifier.c
+@@ -34,8 +34,13 @@
+ #define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
+ 
+ // Define a tracepoint probe function for sched_switch with the correct signature
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,18,0)
+ static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
+                                struct task_struct *next, unsigned int prev_state)
++#else
++static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
++                               struct task_struct *next)
++#endif
+ {
+     // Notify hypervisor about task switch using task pointers
+     igloo_hypercall2(IGLOO_HYP_OSI_TASK_SWITCH, (unsigned long)prev, (unsigned long)next);

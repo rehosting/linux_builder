@@ -1,0 +1,21 @@
+From 774d5b6e347ab2d4e251f1bc80f967244343e1e9 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Tue, 23 Sep 2025 11:28:33 -0400
+Subject: [PATCH 29/37] compat.h: add forward declaration
+
+---
+ include/linux/compat.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/linux/compat.h b/include/linux/compat.h
+index c9df1bacd8..89a9dd5563 100644
+--- a/include/linux/compat.h
++++ b/include/linux/compat.h
+@@ -53,6 +53,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 
+ #ifndef COMPAT_SYSCALL_DEFINE0
+ #define COMPAT_SYSCALL_DEFINE0(name) \
++	static inline long __do_compat_sys_##name(void); \
+ 	asmlinkage long compat_sys_##name(void); \
+ 	ALLOW_ERROR_INJECTION(compat_sys_##name, ERRNO); \
+ 	asmlinkage long compat_sys_##name(void)	\

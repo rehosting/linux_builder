@@ -1,0 +1,280 @@
+From f5bc757c51854c2b571bc44b5441a21afb05ee15 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sat, 9 May 2026 16:53:34 -0400
+Subject: [PATCH 34/37] igloo: fix igloo_task_size
+
+---
+ arch/arm/mm/mmap.c       | 27 +++++++++++++++++++++------
+ arch/loongarch/mm/mmap.c | 17 +++++++++++++----
+ arch/mips/mm/mmap.c      | 17 +++++++++++++----
+ fs/binfmt_elf.c          | 17 +++++++++++------
+ mm/util.c                |  5 +++++
+ 5 files changed, 63 insertions(+), 20 deletions(-)
+
+diff --git a/arch/arm/mm/mmap.c b/arch/arm/mm/mmap.c
+index 3dbb383c26..d34983be00 100644
+--- a/arch/arm/mm/mmap.c
++++ b/arch/arm/mm/mmap.c
+@@ -12,6 +12,9 @@
+ #include <linux/personality.h>
+ #include <linux/random.h>
+ #include <asm/cachetype.h>
++#ifdef CONFIG_IGLOO
++#include <igloo.h>
++#endif
+ 
+ #define COLOUR_ALIGN(addr,pgoff)		\
+ 	((((addr)+SHMLBA-1)&~(SHMLBA-1)) +	\
+@@ -36,6 +39,12 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
+ 	int do_align = 0;
+ 	int aliasing = cache_is_vipt_aliasing();
+ 	struct vm_unmapped_area_info info = {};
++	unsigned long task_size = TASK_SIZE;
++
++#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		task_size = igloo_task_size;
++#endif
+ 
+ 	/*
+ 	 * We only need to do colour alignment if either the I or D
+@@ -54,7 +63,7 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
+ 		return addr;
+ 	}
+ 
+-	if (len > TASK_SIZE)
++	if (len > task_size)
+ 		return -ENOMEM;
+ 
+ 	if (addr) {
+@@ -64,14 +73,14 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
+ 			addr = PAGE_ALIGN(addr);
+ 
+ 		vma = find_vma(mm, addr);
+-		if (TASK_SIZE - len >= addr &&
++		if (task_size - len >= addr &&
+ 		    (!vma || addr + len <= vm_start_gap(vma)))
+ 			return addr;
+ 	}
+ 
+ 	info.length = len;
+ 	info.low_limit = mm->mmap_base;
+-	info.high_limit = TASK_SIZE;
++	info.high_limit = task_size;
+ 	info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0;
+ 	info.align_offset = pgoff << PAGE_SHIFT;
+ 	return vm_unmapped_area(&info);
+@@ -88,6 +97,12 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
+ 	int do_align = 0;
+ 	int aliasing = cache_is_vipt_aliasing();
+ 	struct vm_unmapped_area_info info = {};
++	unsigned long task_size = TASK_SIZE;
++
++#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		task_size = igloo_task_size;
++#endif
+ 
+ 	/*
+ 	 * We only need to do colour alignment if either the I or D
+@@ -97,7 +112,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
+ 		do_align = filp || (flags & MAP_SHARED);
+ 
+ 	/* requested length too big for entire address space */
+-	if (len > TASK_SIZE)
++	if (len > task_size)
+ 		return -ENOMEM;
+ 
+ 	if (flags & MAP_FIXED) {
+@@ -114,7 +129,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
+ 		else
+ 			addr = PAGE_ALIGN(addr);
+ 		vma = find_vma(mm, addr);
+-		if (TASK_SIZE - len >= addr &&
++		if (task_size - len >= addr &&
+ 				(!vma || addr + len <= vm_start_gap(vma)))
+ 			return addr;
+ 	}
+@@ -137,7 +152,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
+ 		VM_BUG_ON(addr != -ENOMEM);
+ 		info.flags = 0;
+ 		info.low_limit = mm->mmap_base;
+-		info.high_limit = TASK_SIZE;
++		info.high_limit = task_size;
+ 		addr = vm_unmapped_area(&info);
+ 	}
+ 
+diff --git a/arch/loongarch/mm/mmap.c b/arch/loongarch/mm/mmap.c
+index 914e82ff3f..b1e9d97685 100644
+--- a/arch/loongarch/mm/mmap.c
++++ b/arch/loongarch/mm/mmap.c
+@@ -8,6 +8,9 @@
+ #include <linux/memblock.h>
+ #include <linux/mm.h>
+ #include <linux/mman.h>
++#ifdef CONFIG_IGLOO
++#include <igloo.h>
++#endif
+ 
+ #define SHM_ALIGN_MASK	(SHMLBA - 1)
+ 
+@@ -26,13 +29,19 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 	unsigned long addr = addr0;
+ 	int do_color_align;
+ 	struct vm_unmapped_area_info info = {};
++	unsigned long task_size = TASK_SIZE;
+ 
+-	if (unlikely(len > TASK_SIZE))
++#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		task_size = igloo_task_size;
++#endif
++
++	if (unlikely(len > task_size))
+ 		return -ENOMEM;
+ 
+ 	if (flags & MAP_FIXED) {
+ 		/* Even MAP_FIXED mappings must reside within TASK_SIZE */
+-		if (TASK_SIZE - len < addr)
++		if (task_size - len < addr)
+ 			return -EINVAL;
+ 
+ 		/*
+@@ -57,7 +66,7 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 			addr = PAGE_ALIGN(addr);
+ 
+ 		vma = find_vma(mm, addr);
+-		if (TASK_SIZE - len >= addr &&
++		if (task_size - len >= addr &&
+ 		    (!vma || addr + len <= vm_start_gap(vma)))
+ 			return addr;
+ 	}
+@@ -84,7 +93,7 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 	}
+ 
+ 	info.low_limit = mm->mmap_base;
+-	info.high_limit = TASK_SIZE;
++	info.high_limit = task_size;
+ 	return vm_unmapped_area(&info);
+ }
+ 
+diff --git a/arch/mips/mm/mmap.c b/arch/mips/mm/mmap.c
+index 5d2a122578..af7b3d6b2b 100644
+--- a/arch/mips/mm/mmap.c
++++ b/arch/mips/mm/mmap.c
+@@ -16,6 +16,9 @@
+ #include <linux/random.h>
+ #include <linux/sched/signal.h>
+ #include <linux/sched/mm.h>
++#ifdef CONFIG_IGLOO
++#include <igloo.h>
++#endif
+ 
+ unsigned long shm_align_mask = PAGE_SIZE - 1;	/* Sane caches */
+ EXPORT_SYMBOL(shm_align_mask);
+@@ -35,13 +38,19 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 	unsigned long addr = addr0;
+ 	int do_color_align;
+ 	struct vm_unmapped_area_info info = {};
++	unsigned long task_size = TASK_SIZE;
+ 
+-	if (unlikely(len > TASK_SIZE))
++#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		task_size = igloo_task_size;
++#endif
++
++	if (unlikely(len > task_size))
+ 		return -ENOMEM;
+ 
+ 	if (flags & MAP_FIXED) {
+ 		/* Even MAP_FIXED mappings must reside within TASK_SIZE */
+-		if (TASK_SIZE - len < addr)
++		if (task_size - len < addr)
+ 			return -EINVAL;
+ 
+ 		/*
+@@ -66,7 +75,7 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 			addr = PAGE_ALIGN(addr);
+ 
+ 		vma = find_vma(mm, addr);
+-		if (TASK_SIZE - len >= addr &&
++		if (task_size - len >= addr &&
+ 		    (!vma || addr + len <= vm_start_gap(vma)))
+ 			return addr;
+ 	}
+@@ -93,7 +102,7 @@ static unsigned long arch_get_unmapped_area_common(struct file *filp,
+ 	}
+ 
+ 	info.low_limit = mm->mmap_base;
+-	info.high_limit = TASK_SIZE;
++	info.high_limit = task_size;
+ 	return vm_unmapped_area(&info);
+ }
+ 
+diff --git a/fs/binfmt_elf.c b/fs/binfmt_elf.c
+index b3d0003ccb..cafdebcad6 100644
+--- a/fs/binfmt_elf.c
++++ b/fs/binfmt_elf.c
+@@ -49,7 +49,14 @@
+ #include <linux/rseq.h>
+ #include <asm/param.h>
+ #include <asm/page.h>
++#ifdef CONFIG_IGLOO
+ #include <igloo.h>
++#define BAD_ADDR(x) (unlikely((unsigned long)(x) >= (igloo_task_size ? igloo_task_size : TASK_SIZE)))
++#define IGLOO_TASK_SIZE (igloo_task_size ? igloo_task_size : TASK_SIZE)
++#else
++#define BAD_ADDR(x) (unlikely((unsigned long)(x) >= TASK_SIZE))
++#define IGLOO_TASK_SIZE TASK_SIZE
++#endif
+ 
+ #ifndef ELF_COMPAT
+ #define ELF_COMPAT 0
+@@ -109,8 +116,6 @@ static struct linux_binfmt elf_format = {
+ #endif
+ };
+ 
+-#define BAD_ADDR(x) (unlikely((unsigned long)(x) >= TASK_SIZE))
+-
+ /*
+  * We need to explicitly zero any trailing portion of the page that follows
+  * p_filesz when it ends before the page ends (e.g. bss), otherwise this
+@@ -700,8 +705,8 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
+ 			k = load_addr + eppnt->p_vaddr;
+ 			if (BAD_ADDR(k) ||
+ 			    eppnt->p_filesz > eppnt->p_memsz ||
+-			    eppnt->p_memsz > TASK_SIZE ||
+-			    TASK_SIZE - eppnt->p_memsz < k) {
++			    eppnt->p_memsz > IGLOO_TASK_SIZE ||
++			    IGLOO_TASK_SIZE - eppnt->p_memsz < k) {
+ 				error = -ENOMEM;
+ 				goto out;
+ 			}
+@@ -1221,8 +1226,8 @@ static int load_elf_binary(struct linux_binprm *bprm)
+ 		 * <= p_memsz so it is only necessary to check p_memsz.
+ 		 */
+ 		if (BAD_ADDR(k) || elf_ppnt->p_filesz > elf_ppnt->p_memsz ||
+-		    elf_ppnt->p_memsz > TASK_SIZE ||
+-		    TASK_SIZE - elf_ppnt->p_memsz < k) {
++		    elf_ppnt->p_memsz > IGLOO_TASK_SIZE ||
++		    IGLOO_TASK_SIZE - elf_ppnt->p_memsz < k) {
+ 			/* set_brk can never work. Avoid overflows. */
+ 			retval = -EINVAL;
+ 			goto out_free_dentry;
+diff --git a/mm/util.c b/mm/util.c
+index f5d5f5dac3..72386af4b7 100644
+--- a/mm/util.c
++++ b/mm/util.c
+@@ -462,6 +462,11 @@ static unsigned long mmap_base(unsigned long rnd, struct rlimit *rlim_stack)
+ 	else if (gap > MAX_GAP)
+ 		gap = MAX_GAP;
+ 
++#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		return PAGE_ALIGN(igloo_task_size - gap - rnd);
++#endif
++
+ 	return PAGE_ALIGN(STACK_TOP - gap - rnd);
+ #endif
+ }
