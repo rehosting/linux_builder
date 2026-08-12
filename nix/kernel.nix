@@ -105,6 +105,19 @@ pkgs.stdenv.mkDerivation {
     cp -r ${src} linux && chmod -R u+w linux
     mkdir -p build
 
+    # Old trees vs. the Nix sandbox. Both of these work in the Docker build only
+    # because an Ubuntu image happens to have the paths; neither is an IGLOO
+    # change, so they are fixed here in the builder rather than in the patch
+    # series (which must stay a faithful description of the fork branch).
+    #
+    # 4.10's Makefile validates KBUILD_OUTPUT with `cd $dir && /bin/pwd`, and
+    # there is no /bin/pwd in the sandbox -- it fails with the profoundly
+    # unhelpful "failed to create output directory".
+    sed -i 's|/bin/pwd|pwd|g' linux/Makefile
+    # Kbuild helpers carry shebangs like #!/usr/bin/awk that don't exist here;
+    # unpatched they fail "not found" and cascade into Kconfig syntax errors.
+    patchShebangs linux/scripts linux/tools 2>/dev/null || true
+
     echo ">>> .config (cpp-assembled fragment + olddefconfig)"
     cp ${config} build/.config
     make -C linux O=$PWD/build olddefconfig
