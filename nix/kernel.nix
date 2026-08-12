@@ -3,9 +3,22 @@
 # This is a faithful port of _in_container_build.sh's per-target build, with the
 # toolchain resolved by kernelsmith instead of an unpinned musl.cc download.
 #
-# Two outputs:
-#   out  -- vmlinux, the arch's boot artifact, Module.symvers
-#   dev  -- the kernel-devel tree out-of-tree modules build against
+# Three outputs:
+#   out     -- the arch's boot artifact, Module.symvers, and (mips*/powerpc*
+#              only, matching build.sh) a STRIPPED vmlinux
+#   dev     -- the kernel-devel tree out-of-tree modules build against
+#   vmlinux -- the UNSTRIPPED vmlinux, for osi/cosi extraction
+#
+# The vmlinux split is not tidiness. _in_container_build.sh runs the osi/cosi
+# extractors against the build-tree vmlinux and only THEN strips the copy it
+# ships -- an ordering a derivation cannot reproduce, because by the time
+# anything downstream sees the kernel it is already realised. Stripping in place
+# would leave the analysis derivations reading a vmlinux with no debug info, on
+# exactly the mips*/powerpc* targets that ship one.
+#
+# Named `vmlinux` and not `debug`: `debug` is a name nixpkgs' multiple-outputs
+# machinery attaches meaning to, and this file already lost a day to `dev` vs
+# `devel` (see below).
 #
 # The dev output MUST be called "dev": nixpkgs' multiple-outputs setup hook
 # relocates include/ to `outputDev`, which falls back to "out" when no output is
@@ -84,7 +97,7 @@ pkgs.stdenv.mkDerivation {
   inherit version;
   name = "igloo-kernel-${version}-${target}";
 
-  outputs = [ "out" "dev" ];
+  outputs = [ "out" "dev" "vmlinux" ];
   dontUnpack = true;
   enableParallelBuilding = true;
 
@@ -135,10 +148,15 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out
 
-    # vmlinux is always kept for analysis (osi/cosi extraction downstream); it
-    # is additionally the shipped boot artifact for mips*/powerpc*.
-    cp build/vmlinux $out/vmlinux.${target}
+    # The unstripped vmlinux always goes to its own output -- osi/cosi need the
+    # debug info, and nothing downstream can un-strip it later.
+    mkdir -p $vmlinux
+    cp build/vmlinux $vmlinux/vmlinux.${target}
+
+    # $out gets a vmlinux ONLY where it is the deliverable boot artifact, which
+    # is what build.sh does; every other target ships just its boot image.
     ${lib.optionalString (deliversVmlinux target) ''
+      cp build/vmlinux $out/vmlinux.${target}
       ${crossPrefix}strip $out/vmlinux.${target} || true
     ''}
     ${lib.optionalString (boot != null) ''
