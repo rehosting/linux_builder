@@ -1,0 +1,39 @@
+From b578a0161e836943a169f95655e70bf61bd40db4 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Tue, 29 Jul 2025 13:41:02 -0400
+Subject: [PATCH 12/37] namespace.c: add igloo_should_block_mount
+
+---
+ fs/namespace.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/fs/namespace.c b/fs/namespace.c
+index eac057e569..921c99f2c7 100644
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -3746,6 +3746,11 @@ static char *copy_mount_string(const void __user *data)
+ 	return data ? strndup_user(data, PATH_MAX) : NULL;
+ }
+ 
++#ifdef CONFIG_IGLOO
++// forward declare igloo_should_block_mount
++bool igloo_should_block_mount(struct path *path);
++#endif
++
+ /*
+  * Flags is a 32-bit value that allows up to 31 non-fs dependent flags to
+  * be given to the mount() call (ie: read-only, no-dev, no-suid etc).
+@@ -3784,7 +3789,12 @@ int path_mount(const char *dev_name, struct path *path,
+ 		return -EPERM;
+ 	if (flags & SB_MANDLOCK)
+ 		warn_mandlock();
+-
++	
++#ifdef CONFIG_IGLOO
++	if (igloo_should_block_mount(path)){
++		return 0;
++	}
++#endif
+ 	/* Default to relatime unless overriden */
+ 	if (!(flags & MS_NOATIME))
+ 		mnt_flags |= MNT_RELATIME;

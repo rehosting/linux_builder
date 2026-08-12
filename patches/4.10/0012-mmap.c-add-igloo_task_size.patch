@@ -1,0 +1,36 @@
+From e1c3ea60d03bf7551aa37c08cbea9f52f79c0337 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:16:06 -0400
+Subject: [PATCH 12/38] mmap.c: add igloo_task_size
+
+---
+ arch/x86/mm/mmap.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/x86/mm/mmap.c b/arch/x86/mm/mmap.c
+index d2dc0438d6..9ed4b0b5f1 100644
+--- a/arch/x86/mm/mmap.c
++++ b/arch/x86/mm/mmap.c
+@@ -30,6 +30,7 @@
+ #include <linux/limits.h>
+ #include <linux/sched.h>
+ #include <asm/elf.h>
++#include <igloo.h>
+ 
+ struct va_alignment __read_mostly va_align = {
+ 	.flags = -1,
+@@ -89,6 +90,14 @@ static unsigned long mmap_base(unsigned long rnd)
+ 		gap = MIN_GAP;
+ 	else if (gap > MAX_GAP)
+ 		gap = MAX_GAP;
++	
++	#ifdef CONFIG_IGLOO
++    if(igloo_task_size) {
++        return PAGE_ALIGN(igloo_task_size - gap - rnd);
++    } else {
++        return PAGE_ALIGN(TASK_SIZE - gap - rnd);
++    }
++	#endif
+ 
+ 	return PAGE_ALIGN(TASK_SIZE - gap - rnd);
+ }

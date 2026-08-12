@@ -1,0 +1,28 @@
+From f5ea95cc58d79e1684e9deded48fbb49a388ac4b Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Mon, 22 Sep 2025 09:03:56 -0400
+Subject: [PATCH 29/38] igloo_weaksyms: fix up passed arguments
+
+---
+ drivers/igloobase/igloo_weaksyms.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+index 3057659f1a..2fa239ea76 100644
+--- a/drivers/igloobase/igloo_weaksyms.c
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -75,12 +75,12 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
+ }
+ EXPORT_SYMBOL(igloo_hc_open);
+ 
+-void (*igloo_ioctl_module)(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
++void (*igloo_ioctl_module)(int error, struct file *filp, unsigned int cmd);
+ void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
+ void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp)
+ {
+     if (igloo_ioctl_module) {
+-        igloo_ioctl_module(error, inode, filp, cmd, argp);
++        igloo_ioctl_module(error, filp, cmd);
+     } else {
+         // printk(KERN_EMERG "igloo_ioctl: unimplemented\n");
+     }

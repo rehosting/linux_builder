@@ -1,0 +1,39 @@
+From 70e12bb9d545ba3a5e20f7091285aee7aa20e059 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Tue, 29 Jul 2025 13:39:56 -0400
+Subject: [PATCH 07/38] sys.c: add igloo_hc_newuname
+
+---
+ kernel/sys.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sys.c b/kernel/sys.c
+index 842914ef7d..f019b9cd50 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -1138,15 +1138,23 @@ static int override_release(char __user *release, size_t len)
+ 	return ret;
+ }
+ 
++// forward declare make_igloo_utsname
++void igloo_hc_newuname(struct new_utsname *name);
++
+ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
+ {
+ 	int errno = 0;
++	struct new_utsname tmp;
+ 
+ 	down_read(&uts_sem);
+-	if (copy_to_user(name, utsname(), sizeof *name))
+-		errno = -EFAULT;
++	memcpy(&tmp, utsname(), sizeof(tmp));
+ 	up_read(&uts_sem);
+ 
++	igloo_hc_newuname(&tmp);
++
++	if (copy_to_user(name, utsname(), sizeof *name))
++		errno = -EFAULT;
++	
+ 	if (!errno && override_release(name->release, sizeof(name->release)))
+ 		errno = -EFAULT;
+ 	if (!errno && override_architecture(name))

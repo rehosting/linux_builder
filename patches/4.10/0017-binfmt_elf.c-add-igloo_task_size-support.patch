@@ -1,0 +1,42 @@
+From b404b7c4531145e2f99c36c993c955384b8f8dfc Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:29:33 -0400
+Subject: [PATCH 17/38] binfmt_elf.c: add igloo_task_size support
+
+---
+ fs/binfmt_elf.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/fs/binfmt_elf.c b/fs/binfmt_elf.c
+index 422370293c..af32087f08 100644
+--- a/fs/binfmt_elf.c
++++ b/fs/binfmt_elf.c
+@@ -39,6 +39,7 @@
+ #include <linux/uaccess.h>
+ #include <asm/param.h>
+ #include <asm/page.h>
++#include <igloo.h>
+ 
+ #ifndef user_long_t
+ #define user_long_t long
+@@ -857,8 +858,19 @@ static int load_elf_binary(struct linux_binprm *bprm)
+ 
+ 	/* Do this so that we can load the interpreter, if need be.  We will
+ 	   change some of these later */
++	#ifdef CONFIG_IGLOO
++	//Begin for igloo: if we moved the stack, we have to move mmap
++    if(igloo_task_size) {
++        retval = setup_arg_pages(bprm, randomize_stack_top(igloo_task_size),
++                     executable_stack);
++    } else {
++        retval = setup_arg_pages(bprm, randomize_stack_top(STACK_TOP),
++                     executable_stack);
++    }
++	#else
+ 	retval = setup_arg_pages(bprm, randomize_stack_top(STACK_TOP),
+-				 executable_stack);
++			 executable_stack);	
++	#endif
+ 	if (retval < 0)
+ 		goto out_free_dentry;
+ 	

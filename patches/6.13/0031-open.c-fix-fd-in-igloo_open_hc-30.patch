@@ -1,0 +1,35 @@
+From add8c7c3c723a8d301c9860154150259f2d0f5ec Mon Sep 17 00:00:00 2001
+From: Benjamin Levy <153011444+be32826@users.noreply.github.com>
+Date: Fri, 7 Nov 2025 13:52:24 -0500
+Subject: [PATCH 31/37] open.c: fix fd in igloo_open_hc() (#30)
+
+---
+ fs/open.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index ed0828cb91..621a52d310 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -1401,9 +1401,6 @@ static long do_sys_openat2(int dfd, const char __user *filename,
+ 	tmp = getname(filename);
+ 	if (IS_ERR(tmp))
+ 		return PTR_ERR(tmp);
+-	#ifdef CONFIG_IGLOO
+-	igloo_hc_open(dfd, tmp, fd);
+-	#endif
+ 	fd = get_unused_fd_flags(how->flags);
+ 	if (fd >= 0) {
+ 		struct file *f = do_filp_open(dfd, tmp, &op);
+@@ -1414,6 +1411,11 @@ static long do_sys_openat2(int dfd, const char __user *filename,
+ 			fd_install(fd, f);
+ 		}
+ 	}
++
++	#ifdef CONFIG_IGLOO
++	igloo_hc_open(dfd, tmp, fd);
++	#endif
++
+ 	putname(tmp);
+ 	return fd;
+ }

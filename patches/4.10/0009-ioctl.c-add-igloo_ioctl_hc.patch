@@ -1,0 +1,37 @@
+From ef26bd547c0c66380faab13ef3c9eac27a07f5e8 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Mon, 17 Mar 2025 15:12:52 -0400
+Subject: [PATCH 09/38] ioctl.c: add igloo_ioctl_hc
+
+---
+ fs/ioctl.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index cb9b029408..de77adea04 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
+@@ -612,6 +612,11 @@ static int ioctl_file_dedupe_range(struct file *file, void __user *arg)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_IGLOO
++// forward declare igloo_ioctl
++void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user * argp);
++#endif
++
+ /*
+  * When you add any new common ioctls to the switches above and below
+  * please update compat_sys_ioctl() too.
+@@ -683,6 +688,11 @@ int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
+ 			error = vfs_ioctl(filp, cmd, arg);
+ 		break;
+ 	}
++
++#ifdef CONFIG_IGLOO
++	igloo_ioctl(error, inode, filp, cmd, argp);
++#endif
++
+ 	return error;
+ }
+ 

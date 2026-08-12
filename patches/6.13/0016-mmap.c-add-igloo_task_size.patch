@@ -1,0 +1,36 @@
+From 6d3cbdd1be758a91954340c66f6f3647bf23f9be Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:16:06 -0400
+Subject: [PATCH 16/37] mmap.c: add igloo_task_size
+
+---
+ arch/x86/mm/mmap.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/mm/mmap.c b/arch/x86/mm/mmap.c
+index b8a6ffffb4..d8a767a046 100644
+--- a/arch/x86/mm/mmap.c
++++ b/arch/x86/mm/mmap.c
+@@ -21,6 +21,7 @@
+ #include <linux/elf-randomize.h>
+ #include <asm/elf.h>
+ #include <asm/io.h>
++#include <igloo.h>
+ 
+ #include "physaddr.h"
+ 
+@@ -102,7 +103,13 @@ static unsigned long mmap_base(unsigned long rnd, unsigned long task_size,
+ 	else if (gap > gap_max)
+ 		gap = gap_max;
+ 
+-	return PAGE_ALIGN(task_size - gap - rnd);
++	#ifdef CONFIG_IGLOO
++	if(igloo_task_size) {
++		return PAGE_ALIGN(igloo_task_size - gap - rnd);
++	} else {
++		return PAGE_ALIGN(TASK_SIZE - gap - rnd);
++	}
++	#endif
+ }
+ 
+ static unsigned long mmap_legacy_base(unsigned long rnd,

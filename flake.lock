@@ -1,0 +1,66 @@
+{
+  "nodes": {
+    "kernelsmith": {
+      "inputs": {
+        "musl-cross-make": "musl-cross-make",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1783346134,
+        "narHash": "sha256-1izwxPuWd5+fSDbjbNjXLOGG1sGKq3UsQFbeDQYNP3Q=",
+        "owner": "rehosting",
+        "repo": "kernelsmith",
+        "rev": "7c5bb897c635f81b5077d32f2fb8a8ad4eb9ad6a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rehosting",
+        "repo": "kernelsmith",
+        "type": "github"
+      }
+    },
+    "musl-cross-make": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781646546,
+        "narHash": "sha256-ZGkLvkred/sDa2Mw2/1N+Nh8bvUyujxxOLTZDfd2qN4=",
+        "owner": "richfelker",
+        "repo": "musl-cross-make",
+        "rev": "227df8b99103f9c59f6570babf892978e293082f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "richfelker",
+        "repo": "musl-cross-make",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1735563628,
+        "narHash": "sha256-OnSAY7XDSx7CtDoqNh8jwVwh4xNL/2HaJxGjryLWzX8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b134951a4c9f3c995fd7be05f3243f8ecd65d798",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-24.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "kernelsmith": "kernelsmith",
+        "nixpkgs": [
+          "kernelsmith",
+          "nixpkgs"
+        ]
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

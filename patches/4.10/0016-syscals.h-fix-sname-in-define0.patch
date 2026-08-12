@@ -1,0 +1,22 @@
+From fb76ed1995743218dc4a0d8ac2e343ffd666b2e3 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Mon, 22 Sep 2025 09:04:08 -0400
+Subject: [PATCH 16/38] syscals.h: fix sname in define0
+
+---
+ include/linux/syscalls.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index f7d0ac1d9a..f916d83569 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -194,7 +194,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 	static inline long __do_sys_##sname(void);												   \
+ 	asmlinkage long sys_##sname(void)                                                          \
+ 	{                                                                                          \
+-		const char *syscall_basename = __stringify(name); /* Base name */                      \
++		const char *syscall_basename = __stringify(sname); /* Base name */                      \
+ 		long ret;                                                                              \
+ 		bool skip = false;                                                                     \
+ 		long skip_ret = 0;                                                                     \

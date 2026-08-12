@@ -1,0 +1,32 @@
+From 0a80e99b2d992a8a46df90217374f4de03a7f529 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:15:02 -0400
+Subject: [PATCH 11/38] exec.c: add igloo_task_size
+
+---
+ fs/exec.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/exec.c b/fs/exec.c
+index e579466107..ab8a94d669 100644
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -61,6 +61,7 @@
+ #include <linux/uaccess.h>
+ #include <asm/mmu_context.h>
+ #include <asm/tlb.h>
++#include <igloo.h>
+ 
+ #include <trace/events/task.h>
+ #include "internal.h"
+@@ -1323,6 +1324,10 @@ void setup_new_exec(struct linux_binprm * bprm)
+ 	 * some architectures like powerpc
+ 	 */
+ 	current->mm->task_size = TASK_SIZE;
++	#ifdef CONFIG_IGLOO
++	if (igloo_task_size)
++		current->mm->task_size = igloo_task_size;
++	#endif
+ 
+ 	/* install the new credentials */
+ 	if (!uid_eq(bprm->cred->uid, current_euid()) ||

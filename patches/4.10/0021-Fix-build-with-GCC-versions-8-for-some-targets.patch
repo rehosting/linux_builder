@@ -1,0 +1,24 @@
+From 0978e0e13bc13561ff026dd7989aecf948469d7b Mon Sep 17 00:00:00 2001
+From: Benjamin Levy <benjamin.levy@ll.mit.edu>
+Date: Wed, 17 Jan 2024 15:53:36 -0500
+Subject: [PATCH 21/38] Fix build with GCC versions >=8 for some targets
+
+---
+ Makefile | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index f1e6a02a0c..160e3393ac 100644
+--- a/Makefile
++++ b/Makefile
+@@ -401,6 +401,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -Wno-format-security \
+ 		   -std=gnu89 $(call cc-option,-fno-PIE)
+ 
++# IGLOO
++# Fix build with GCC versions >=8 for some targets
++# https://github.com/torvalds/linux/commit/bee2003
++KBUILD_CFLAGS += -Wno-attribute-alias
+ 
+ KBUILD_AFLAGS_KERNEL :=
+ KBUILD_CFLAGS_KERNEL :=
