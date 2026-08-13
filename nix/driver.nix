@@ -33,11 +33,9 @@ kernelsmith.buildModule {
   # it ($(src)/portal, $(src)/../scripts).
   preBuild = "cd src";
 
-  # powerpc modules reference the out-of-line register save/restore helpers
-  # (_savegpr*/_restgpr*), which live in the kernel's own
-  # arch/powerpc/lib/crtsavres.o rather than in libgcc. Without the search path
-  # the module link fails on undefined _restgpr_31_x.
-  makeVars = pkgs.lib.optionalAttrs (pkgs.lib.hasPrefix "powerpc" target) {
-    EXTRA_LDFLAGS = "-L${kernel.dev}/arch/powerpc/lib";
-  };
+  # NB: 32-bit powerpc needs arch/powerpc/lib/crtsavres.o staged into the module
+  # build directory. That is handled generically in kernelsmith's buildModule --
+  # it is a property of ppc32 kbuild, not of this module. _in_container_build.sh
+  # carries the same workaround, plus an EXTRA_LDFLAGS="-L…" that does nothing:
+  # KBUILD_LDFLAGS_MODULE names the object positionally, and -L only affects -l.
 }

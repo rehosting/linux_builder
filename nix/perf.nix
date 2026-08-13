@@ -41,7 +41,24 @@ let
   #
   # Using each variant's own toolchain also gets the matching 32-bit/LE musl,
   # which a 64-bit BE sysroot simply does not contain.
-  toolchainArch = target: target;
+  #
+  # The one exception is `powerpcle`, and it is not a toolchain problem -- it is
+  # that the target does not exist. arch/powerpc/platforms/Kconfig.cputype has
+  #
+  #   config CPU_LITTLE_ENDIAN
+  #       depends on PPC_BOOK3S_64
+  #
+  # so a 32-bit little-endian powerpc kernel cannot be expressed in mainline
+  # Linux at all. configs/6.13/powerpcle sets CONFIG_CPU_LITTLE_ENDIAN=y,
+  # olddefconfig silently drops it, and the resulting vmlinux is byte-identical
+  # to `powerpc` (verified by sha256). configs/4.10/powerpcle is already
+  # retired as `.unused`.
+  #
+  # So the KERNEL for this cell is big-endian, and perf must match it or we ship
+  # a userspace binary that cannot run on its own kernel. Building perf "as the
+  # target name implies" would be the more wrong answer here.
+  # See draft 34 for the open question of whether this cell should exist.
+  toolchainArch = target: if target == "powerpcle" then "powerpc" else target;
 
   # perf resolves its tools headers with -I$(srctree)/tools/arch/$(ARCH)/include/uapi,
   # using ARCH verbatim rather than the SRCARCH that kbuild derives from it. The
