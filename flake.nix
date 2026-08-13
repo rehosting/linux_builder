@@ -153,6 +153,11 @@
         };
         kernel-devel-all = releaseLib.develTarball { cells = allRecords; };
 
+        # Catches the failure class where a cell builds fine and produces an
+        # artifact whose ELF class or endianness disagrees with its target name.
+        # See nix/shape.nix -- two such bugs shipped undetected on this branch.
+        shape-check = (import ./nix/shape.nix { inherit pkgs; }) { cells = allRecords; };
+
         # The analysis tools, pinned. Exposed so their provenance is inspectable
         # and so igloo_driver can reuse dwarf2json for its own ISF (it runs the
         # same fork over igloo.ko) instead of re-deriving the pin.
