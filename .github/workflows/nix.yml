@@ -128,6 +128,12 @@ jobs:
           done
           exit $fail
 
+      # Every artifact's ELF class and byte order must match what its target
+      # name claims. Cheap, and it is the only check that catches a cell which
+      # builds cleanly and produces the wrong machine's binary.
+      - name: Shapes match target names
+        run: nix build --print-out-paths .#shape-check
+
       - name: Release tarballs assemble
         run: |
           nix build --print-out-paths .#kernels-latest
