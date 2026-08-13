@@ -14,10 +14,23 @@ on:
   push:
     branches: [main, nix-patchset]
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Build every cell (kernel + perf + driver), not just the gate"
+        type: boolean
+        default: false
 
 concurrency:
   group: nix-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Job-level so that step-level `if:` can actually see it. A step's own `env:`
+# block is NOT in scope for that step's `if:`, so the previous
+# `if: env.CACHIX_AUTH_TOKEN != ''` next to a step-level `env:` was always
+# false and the cache was never pushed -- the exact failure this workflow was
+# written to prevent.
+env:
+  CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
 jobs:
   series:
@@ -37,7 +50,7 @@ jobs:
         id: tarball
         run: |
           set -euo pipefail
-          TAG=$(python3 -c "import json;print(json.load(open('patches/${{ matrix.version }}/../base.json'))['${{ matrix.version }}']['tag'])")
+          TAG=$(python3 -c "import json;print(json.load(open('patches/base.json'))['${{ matrix.version }}']['tag'])")
           MAJOR="${TAG%%.*}"
           URL="https://cdn.kernel.org/pub/linux/kernel/v${MAJOR}.x/linux-${TAG}.tar.xz"
           echo "path=$(nix-prefetch-url --print-path "$URL" | tail -1)" >> "$GITHUB_OUTPUT"
@@ -45,6 +58,10 @@ jobs:
       - name: Series applies cleanly to pristine upstream
         run: ./scripts/verify-series.sh "${{ matrix.version }}" "${{ steps.tarball.outputs.path }}"
 
+  # The fast gate: one cell per version, and for each of them the three
+  # artifacts that have historically failed independently of the kernel --
+  # perf (silently skipped for 10 of 13 targets in the shell build), and the
+  # module (which is what proves the `dev` build tree is actually usable).
   build:
     name: build ${{ matrix.cell }}
     runs-on: rehosting-arc
@@ -52,24 +69,72 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # One cell per version keeps the gate fast; `nix build .#all` covers the
-        # full 18-cell matrix on dispatch/release.
-        cell: ["kernel-4.10-armel", "kernel-6.13-armel"]
+        cell: ["4.10-armel", "6.13-armel"]
     steps:
       - uses: actions/checkout@v4
       - uses: rehosting/nix-setup@v1
 
-      - name: Build
-        run: nix build --print-out-paths ".#packages.x86_64-linux.\"${{ matrix.cell }}\""
+      - name: Build kernel, perf and module
+        run: |
+          set -euo pipefail
+          for out in kernel perf driver; do
+            nix build --print-out-paths \
+              ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
+          done
 
       # Populate the cache from PRs too. Pushing only on release is why cross
       # toolchain closures get rebuilt from source (~68 min observed elsewhere
       # in this stack) instead of substituted.
       - name: Push to Cachix
         if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          nix profile install nixpkgs#cachix
+          for out in kernel perf driver; do
+            nix build --print-out-paths \
+              ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\"" \
+              | cachix push rehosting-tools
+          done
+
+  # The full 20-cell matrix, on demand. Not on every PR: it is the expensive
+  # one, and the gate above catches the failures that are not arch-specific.
+  full:
+    name: full matrix
+    runs-on: rehosting-arc
+    needs: series
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rehosting/nix-setup@v1
+
+      - name: Every kernel
+        run: nix build --print-out-paths ".#all"
+
+      # Built separately from `.#all` so a perf or module failure is
+      # attributable at a glance rather than buried in a 20-cell aggregate.
+      - name: Every perf and module
+        run: |
+          set -euo pipefail
+          cells=$(nix eval --json ".#packages.x86_64-linux" --apply \
+            'p: builtins.filter (n: builtins.match "(perf|driver)-.*" n != null)
+                  (builtins.attrNames p)' | python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)))')
+          fail=0
+          for c in $cells; do
+            if nix build --no-link ".#packages.x86_64-linux.\"$c\""; then
+              echo "OK   $c"
+            else
+              echo "FAIL $c"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Release tarballs assemble
+        run: |
+          nix build --print-out-paths .#kernels-latest
+          nix build --print-out-paths .#kernel-devel-all
+
+      - name: Push to Cachix
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
         run: |
           nix profile install nixpkgs#cachix
-          nix build --print-out-paths ".#packages.x86_64-linux.\"${{ matrix.cell }}\"" \
-            | cachix push rehosting-tools
+          nix build --print-out-paths .#all | cachix push rehosting-tools
