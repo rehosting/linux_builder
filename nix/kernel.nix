@@ -68,13 +68,42 @@ let
   # vmlinux is the deliverable boot artifact for these families.
   deliversVmlinux = target: lib.hasPrefix "mips" target || lib.hasPrefix "powerpc" target;
 
+  # Which arch's TOOLCHAIN a target builds with, where that differs from the
+  # target itself.
+  #
+  # The whole powerpc family builds with ONE biarch powerpc64 big-endian
+  # compiler, exactly as _in_container_build.sh's get_cc does (every powerpc*
+  # target there resolves to powerpc64-linux-musl-, or powerpc64-linux-gnu- on
+  # 4.10). Bitness and endianness come from the kernel's own arch Makefile
+  # driven by Kconfig -- NOT from the triple.
+  #
+  # This is not cosmetic. kernelsmith models the four powerpc variants as four
+  # independent arches with four separate toolchains, and the per-variant
+  # powerpc64LE toolchain is 64-bit only:
+  #
+  #   powerpc64   (BE, Bootlin power8):  -m32 OK  -m64 OK  -mlittle/-mbig OK
+  #   powerpc64le (LE, Bootlin power8):  -m32 FAIL
+  #
+  # 6.13/powerpc64le sets CONFIG_COMPAT, so kbuild builds a 32-bit vDSO
+  # (VDSO32A ... sigtramp32-32.o) and the LE-only compiler dies with
+  # "cc1: error: '-m32' not supported in this configuration". Aligning the
+  # family to powerpc64 fixes that and drops a from-source musl-cross-make
+  # build for powerpcle, which Bootlin has no toolchain for at all.
+  #
+  # TODO(kernelsmith): this belongs upstream as a kernel-specific resolver
+  # (`kernelToolchainFor`), NOT as a change to `toolchainFor` -- userland musl
+  # for powerpc64le should still be the powerpc64le triple. Kept local until
+  # that API exists.
+  toolchainArch = target:
+    if lib.hasPrefix "powerpc" target then "powerpc64" else target;
+
 in
 { version, target, src, config }:
 
 let
   arch = shortArch.${target} or (throw "kernel.nix: no ARCH mapping for target ${target}");
   boot = bootArtifact.${target} or null;
-  toolchain = kernelsmith.toolchainFor version target;
+  toolchain = kernelsmith.toolchainFor version (toolchainArch target);
   crossPrefix = "${toolchain.target}-";
 
   # Trailing -Wno-error beats any -Werror the tree injects, at any depth.
