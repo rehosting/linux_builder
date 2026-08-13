@@ -13,7 +13,7 @@
     # the embedded-toolchains Docker image, whose toolchains were unversioned
     # `wget https://musl.cc/*-cross.tgz` downloads -- i.e. today's shipped
     # kernels have no recorded compiler identity.
-    kernelsmith.url = "github:rehosting/kernelsmith";
+    kernelsmith.url = "github:rehosting/kernelsmith/buildmodule";
     nixpkgs.follows = "kernelsmith/nixpkgs";
 
     # Source only -- igloo_driver has no flake of its own yet. This is here to

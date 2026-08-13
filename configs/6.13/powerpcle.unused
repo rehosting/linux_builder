@@ -1,0 +1,33 @@
+# RETIRED. A 32-bit little-endian powerpc kernel cannot be built from mainline
+# Linux, so this config never produced what its name claims.
+#
+# arch/powerpc/platforms/Kconfig.cputype:
+#
+#     config CPU_LITTLE_ENDIAN
+#         bool "Build little endian kernel"
+#         depends on PPC_BOOK3S_64
+#
+# PPC_BOOK3S_64 is 64-bit only, so on a 32-bit config the symbol is not
+# selectable, olddefconfig drops the line below without a word, and the build
+# falls back to big endian. The resulting vmlinux.powerpcle was verified
+# BYTE-IDENTICAL (sha256) to vmlinux.powerpc.
+#
+# The cell therefore cost a kernel build, a static perf build, an osi + cosi
+# extraction and an igloo.ko build per release, to ship `powerpc` a second time
+# under a name asserting the opposite. Worse than the waste: had penguin ever
+# selected powerpcle for genuinely little-endian firmware, it would have been
+# handed a big-endian kernel with nothing to indicate it. (In practice powerpc
+# LE hardware starts at POWER8/ppc64le, so the likely device impact is zero --
+# but that is luck, not design.)
+#
+# 4.10 already retired this target (configs/4.10/powerpcle.unused); this brings
+# 6.13 into line. If a real 32-bit LE powerpc target ever appears, it needs
+# kernel support that does not exist upstream, not this file.
+#
+# `nix build .#shape-check` now asserts every cell's ELF class and byte order
+# against its target name, so a future config asking for an endianness Kconfig
+# will not grant fails loudly instead of silently.
+#
+# Original contents:
+#   #include "powerpc"
+#   CONFIG_CPU_LITTLE_ENDIAN=y

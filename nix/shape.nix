@@ -41,14 +41,11 @@ let
     riscv64 = { bits = 64; endian = "LSB"; };
     x86_64 = { bits = 64; endian = "LSB"; };
 
-    # powerpcle is deliberately absent. A 32-bit little-endian powerpc kernel is
-    # not expressible in mainline Linux (CPU_LITTLE_ENDIAN depends on
-    # PPC_BOOK3S_64), so there is no honest expectation to assert: the cell
-    # really does produce big-endian output, identical to `powerpc`. Asserting
-    # LSB would fail a build that is behaving as well as it can; asserting MSB
-    # would bless a target name that lies. It is excluded, and the exclusion is
-    # itself reported, so the anomaly stays visible rather than becoming a
-    # silently-passing row. See draft 34.
+    # No powerpcle entry, and none is needed: the target is retired (see
+    # configs/6.13/powerpcle.unused) precisely because no honest expectation
+    # could be written for it. If it ever comes back without real upstream
+    # ppc32-LE support, it lands in the SKIP branch below rather than passing
+    # quietly -- which is the point.
   };
 
 in
