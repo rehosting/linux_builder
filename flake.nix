@@ -15,10 +15,20 @@
     # kernels have no recorded compiler identity.
     kernelsmith.url = "github:rehosting/kernelsmith";
     nixpkgs.follows = "kernelsmith/nixpkgs";
+
+    # Source only -- igloo_driver has no flake of its own yet. This is here to
+    # ACCEPTANCE-TEST the kernel `dev` output (see nix/driver.nix): a build tree
+    # that cannot build the one module we care about is broken, and this repo is
+    # where that should be caught. It is not a claim about which repo should own
+    # the driver build long-term.
+    igloo_driver = {
+      url = "github:rehosting/igloo_driver";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs, kernelsmith }:
+    { self, nixpkgs, kernelsmith, igloo_driver }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -88,6 +98,7 @@
       analysisLib = import ./nix/analysis.nix { inherit pkgs; };
       releaseLib = import ./nix/release.nix { inherit pkgs; };
       mkPerf = import ./nix/perf.nix { inherit pkgs kernelsmith; };
+      mkDriver = import ./nix/driver.nix { inherit pkgs kernelsmith; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map
@@ -101,14 +112,30 @@
               src = sources.${version};
               inherit (kernel) arch;
             };
+            driver = mkDriver {
+              inherit kernel version target;
+              src = igloo_driver;
+            };
           })
         (buildable version);
 
       allRecords = lib.concatMap cellRecords (builtins.attrNames matrix);
 
+      # Per-cell analysis/perf outputs, individually addressable. Without these
+      # a broken perf can only be reached through the whole release tarball,
+      # which rebuilds everything to show you one compiler error.
+      perCellOutputs = lib.listToAttrs (lib.concatMap
+        (r: [
+          (lib.nameValuePair "perf-${r.version}-${r.target}" r.perf)
+          (lib.nameValuePair "driver-${r.version}-${r.target}" r.driver)
+          (lib.nameValuePair "osi-${r.version}-${r.target}" r.osi)
+          (lib.nameValuePair "cosi-${r.version}-${r.target}" r.cosi)
+        ])
+        allRecords);
+
     in
     {
-      packages.${system} = cells // {
+      packages.${system} = cells // perCellOutputs // {
         default = cells."kernel-6.13-armel";
 
         # Everything buildable today, in one derivation, for CI.
