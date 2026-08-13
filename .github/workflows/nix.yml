@@ -25,6 +25,17 @@ concurrency:
   group: nix-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The Arc pods run as a uid with no passwd entry, so $USER/$LOGNAME are unset
+# and HOME-relative caches are not writable. `cachix use` fails outright with
+# "$USER must be set. If running in a container, try setting USER=root." These
+# four are a precondition for running Nix on this runner pool, not decoration --
+# rehosting/qemu's workflow carries the same block for the same reason.
+env:
+  USER: runner
+  LOGNAME: runner
+  TMPDIR: /home/runner/_work/_temp
+  XDG_CACHE_HOME: /home/runner/_work/.cache
+
 jobs:
   series:
     name: series applies (${{ matrix.version }})
@@ -35,6 +46,9 @@ jobs:
         version: ["4.10", "6.13"]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
 
       - name: Set up Nix
         uses: rehosting/ci/actions/nix-setup@v1
@@ -76,6 +90,8 @@ jobs:
         cell: ["4.10-armel", "6.13-armel"]
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
       - name: Set up Nix
         uses: rehosting/ci/actions/nix-setup@v1
         with:
@@ -107,6 +123,8 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_matrix }}
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
       - name: Set up Nix
         uses: rehosting/ci/actions/nix-setup@v1
         with:
