@@ -5,8 +5,9 @@
 # series applies cleanly to the pinned upstream tarball" is the invariant that
 # makes patches-as-source-of-truth safe.
 #
-# Runner/cache wiring is exercised on `rehosting-arc`; see
-# .github/actions/nix-setup for why that setup is a local composite action.
+# Nix install + Cachix wiring comes from rehosting/ci/actions/nix-setup, the
+# org's shared action. Per its skip-push default, PR runs PULL from
+# rehosting-tools but do not push; pushes to main populate it.
 name: nix (patch series + kernels)
 
 on:
@@ -24,14 +25,6 @@ concurrency:
   group: nix-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Job-level so that step-level `if:` can actually see it. A step's own `env:`
-# block is NOT in scope for that step's `if:`, so the previous
-# `if: env.CACHIX_AUTH_TOKEN != ''` next to a step-level `env:` was always
-# false and the cache was never pushed -- the exact failure this workflow was
-# written to prevent.
-env:
-  CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
 jobs:
   series:
     name: series applies (${{ matrix.version }})
@@ -43,9 +36,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/nix-setup
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
 
       - name: Fetch the pinned upstream tarball
         id: tarball
@@ -73,9 +76,19 @@ jobs:
         cell: ["4.10-armel", "6.13-armel"]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/nix-setup
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
 
       - name: Build kernel, perf and module
         run: |
@@ -83,20 +96,6 @@ jobs:
           for out in kernel perf driver; do
             nix build --print-out-paths \
               ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
-          done
-
-      # Populate the cache from PRs too. Pushing only on release is why cross
-      # toolchain closures get rebuilt from source (~68 min observed elsewhere
-      # in this stack) instead of substituted.
-      - name: Push to Cachix
-        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
-        run: |
-          set -euo pipefail
-          nix profile install nixpkgs#cachix
-          for out in kernel perf driver; do
-            nix build --print-out-paths \
-              ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\"" \
-              | cachix push rehosting-tools
           done
 
   # The full 19-cell matrix, on demand. Not on every PR: it is the expensive
@@ -108,9 +107,19 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_matrix }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/nix-setup
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
 
       - name: Every kernel
         run: nix build --print-out-paths ".#all"
@@ -143,9 +152,3 @@ jobs:
         run: |
           nix build --print-out-paths .#kernels-latest
           nix build --print-out-paths .#kernel-devel-all
-
-      - name: Push to Cachix
-        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
-        run: |
-          nix profile install nixpkgs#cachix
-          nix build --print-out-paths .#all | cachix push rehosting-tools
