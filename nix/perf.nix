@@ -25,10 +25,32 @@
 let
   inherit (pkgs) lib;
 
-  # Same family collapsing as kernel.nix: one biarch powerpc64 toolchain builds
-  # every powerpc variant, matching get_cc.
-  toolchainArch = target:
-    if lib.hasPrefix "powerpc" target then "powerpc64" else target;
+  # NB: deliberately NO powerpc family collapsing here, unlike kernel.nix.
+  #
+  # kernel.nix routes all four powerpc variants through one biarch powerpc64 BE
+  # toolchain, which is correct for a kernel: it is built -nostdinc
+  # -ffreestanding, and arch/powerpc/Makefile derives -m32/-m64 and the
+  # endianness from Kconfig, so one compiler yields four different kernels.
+  #
+  # perf has no Kconfig and links -static against a TARGET LIBC, so neither of
+  # those holds. Collapsing the family here produced four BYTE-IDENTICAL
+  # big-endian 64-bit binaries for powerpc, powerpcle, powerpc64 and
+  # powerpc64le -- three of which cannot run on their guest at all. It fails
+  # silently: every cell builds, `perf` exists, and only the ELF header shows
+  # the damage.
+  #
+  # Using each variant's own toolchain also gets the matching 32-bit/LE musl,
+  # which a 64-bit BE sysroot simply does not contain.
+  toolchainArch = target: target;
+
+  # perf resolves its tools headers with -I$(srctree)/tools/arch/$(ARCH)/include/uapi,
+  # using ARCH verbatim rather than the SRCARCH that kbuild derives from it. The
+  # kernel build takes ARCH=x86_64 and normalises it to x86 internally; perf does
+  # not, and tools/arch/x86_64/ does not exist, so 4.10 fails with
+  #   tools/include/uapi/linux/mman.h:4: fatal error: uapi/asm/mman.h: No such file
+  # which names the generic header rather than the missing arch directory.
+  # tools/arch/x86/ is correct for every kernel version, so map it here.
+  perfArch = a: if a == "x86_64" then "x86" else a;
 
   # mips64 needs an explicit output-format flag or ld picks the wrong ABI.
   extraLdFlags = {
@@ -52,6 +74,24 @@ let
     "-Wno-format-overflow" "-Wno-array-bounds"
   ];
 
+  # perf probes for optional libc features by compiling test programs under
+  # tools/build/feature. Cross-compiling makes several of those tests fail for
+  # reasons that have nothing to do with whether the feature exists, and perf
+  # responds by defining its own fallback -- which then collides with the real
+  # declaration the target libc does provide:
+  #
+  #   bench/bench.h:66      conflicting types for 'pthread_attr_setaffinity_np'
+  #   builtin-record.c:207  static declaration of 'gettid' follows non-static
+  #
+  # Both symbols are present in glibc, so the honest fix is to tell perf the
+  # truth rather than silence the warning. Only the glibc target needs this;
+  # the musl/kernel-only toolchains really do lack them, and there perf's
+  # fallback is correct.
+  glibcFeatureFlags = lib.concatStringsSep " " [
+    "-DHAVE_PTHREAD_ATTR_SETAFFINITY_NP"
+    "-DHAVE_GETTID"
+  ];
+
 in
 { version, target, src, arch }:
 
@@ -61,8 +101,22 @@ let
   # loongarch64: nixpkgs glibc cross (has a libc). Everything else: the same
   # kernelsmith toolchain that built the kernel.
   loongCross = pkgs.pkgsCross.loongarch64-linux;
-  toolchain = if isLoong then loongCross.buildPackages.gcc else kernelsmith.toolchainFor version (toolchainArch target);
-  binutils = lib.optional isLoong loongCross.buildPackages.binutils;
+
+  # Use the WRAPPED cross cc, not the bare gcc: the wrapper is what puts the
+  # target glibc on the include and library search paths. With the bare gcc the
+  # compile succeeds and the link fails on -lpthread/-lrt/-lm/-ldl, which reads
+  # like a missing dependency but is really a missing sysroot.
+  toolchain =
+    if isLoong then loongCross.stdenv.cc
+    else kernelsmith.toolchainFor version (toolchainArch target);
+
+  # -static needs the archive halves of glibc, which nixpkgs splits into a
+  # separate `static` output.
+  loongLibs = lib.optionals isLoong [
+    loongCross.buildPackages.binutils
+    loongCross.stdenv.cc.libc.static
+  ];
+
   crossPrefix =
     if isLoong then loongCross.stdenv.cc.targetPrefix
     else "${toolchain.target}-";
@@ -75,7 +129,7 @@ pkgs.stdenv.mkDerivation {
   dontUnpack = true;
   enableParallelBuilding = true;
 
-  nativeBuildInputs = [ toolchain ] ++ binutils ++ (with pkgs; [
+  nativeBuildInputs = [ toolchain ] ++ loongLibs ++ (with pkgs; [
     gnumake bison flex perl python3 pkg-config which
   ]);
 
@@ -83,17 +137,63 @@ pkgs.stdenv.mkDerivation {
     runHook preBuild
     cp -r ${src} linux && chmod -R u+w linux
     patchShebangs linux/scripts linux/tools 2>/dev/null || true
+
+    # Same sandbox breakage kernel.nix hits, in a different file: 4.10-era
+    # tools/scripts/Makefile.include validates OUTPUT with `cd $dir && /bin/pwd`,
+    # and there is no /bin/pwd here. It reports it as
+    #   *** output directory "/build/out/" does not exist.  Stop.
+    # which points at the wrong thing entirely -- the directory is right there.
+    # Not an IGLOO change, so it is fixed in the builder, not the patch series.
+    find linux/tools linux/Makefile -name 'Makefile*' -o -name '*.mk' 2>/dev/null \
+      | xargs -r sed -i 's|/bin/pwd|pwd|g'
+    sed -i 's|/bin/pwd|pwd|g' linux/Makefile
+
     mkdir -p out
+${lib.optionalString (ldFlag != "") ''
+    # mips64: the musl toolchain's ld defaults to the n32 emulation
+    # (elf32-ntradlittlemips) while the objects are n64, so relocatable links
+    # inside libapi fail with "ABI is incompatible with that of the selected
+    # emulation".
+    #
+    # Passing LD="ld -m elf64ltsmip" on the make command line is not enough:
+    # tools/perf/Makefile does `unexport MAKEFLAGS`, so command-line variables
+    # do NOT reach the nested tools/lib/* builds, and those are exactly where
+    # the failure is. A PATH shim survives that, because every one of those
+    # builds resolves $(CROSS_COMPILE)ld through PATH.
+    #
+    # A shim rather than LDEMULATION= because the environment variable would
+    # also be picked up by the HOST ld that builds fixdep.
+    mkdir -p ldshim
+    cat > ldshim/${crossPrefix}ld <<EOF
+#!${pkgs.runtimeShell}
+exec $(command -v ${crossPrefix}ld)${ldFlag} "\$@"
+EOF
+    chmod +x ldshim/${crossPrefix}ld
+    export PATH="$PWD/ldshim:$PATH"
+''}
+
+    # Drop the dlfilters from the build. They are dlopen plugins -- dead weight
+    # in a -static perf, which cannot usefully dlopen anything -- and we never
+    # ship them, since installPhase copies only out/perf. On loongarch64 they
+    # are worse than dead weight: linking a .so against a static-only glibc
+    # segfaults binutils 2.41.
+    #
+    # Done by editing ALL_PROGRAMS rather than by naming $(OUTPUT)perf as the
+    # goal, because Makefile.perf re-invokes itself through a sub-make that
+    # rewrites OUTPUT, and an absolute-path goal does not survive the round trip
+    # ("No rule to make target '/build/out/libapi/libapi.a'").
+    sed -i 's|^ALL_PROGRAMS = $(PROGRAMS) $(SCRIPTS) $(DLFILTERS)|ALL_PROGRAMS = $(PROGRAMS) $(SCRIPTS)|' \
+      linux/tools/perf/Makefile.perf
 
     make -C linux/tools/perf \
-      ARCH=${arch} \
+      ARCH=${perfArch arch} \
       CROSS_COMPILE=${crossPrefix} \
       CC="${crossPrefix}gcc" \
-      LD="${crossPrefix}ld${ldFlag}" \
+      LD="${crossPrefix}ld" \
       OUTPUT=$PWD/out/ \
       LDFLAGS="-static" \
       WERROR=0 \
-      EXTRA_CFLAGS="${extraCFlags}" \
+      EXTRA_CFLAGS="${extraCFlags}${lib.optionalString isLoong " ${glibcFeatureFlags}"}" \
       HOSTCFLAGS="-Wno-error" \
       ${lib.concatMapStringsSep " " (f: "${f}=1") noFlags} \
       -j$NIX_BUILD_CORES
