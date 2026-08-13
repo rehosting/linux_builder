@@ -1,0 +1,37 @@
+# Shared Nix setup for this repo's workflows.
+#
+# Local composite action rather than a `rehosting/nix-setup` repo: an earlier
+# draft of nix.yml referenced `rehosting/nix-setup@v1`, which does not exist, so
+# every job failed at "Set up job" with `Unable to resolve action ...,
+# repository not found` -- before running a single step. Keeping it in-repo
+# means it is version-locked to the workflow that uses it and cannot 404.
+#
+# The setup itself mirrors what already works on `rehosting-arc` elsewhere in
+# the org (rehosting/hyperfs build.yaml): cachix/install-nix-action with a
+# token, plus explicit substituter config.
+name: nix-setup
+description: Install Nix and point it at the rehosting-tools binary cache.
+
+inputs:
+  github_token:
+    description: Token for install-nix-action, to avoid unauthenticated rate limits.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v27
+      with:
+        github_access_token: ${{ inputs.github_token }}
+        # The substituters are also declared in flake.nix's nixConfig, but that
+        # only applies for trusted users -- on a runner where the invoking user
+        # is not in trusted-users the flake's request is silently ignored and
+        # every cross toolchain rebuilds from source. Setting them here is what
+        # actually takes effect.
+        extra_nix_config: |
+          max-jobs = 8
+          cores = 8
+          extra-substituters = https://rehosting-tools.cachix.org
+          extra-trusted-public-keys = rehosting-tools.cachix.org-1:iNKSaFwG7MfGn6Fk7oTmIcLHqfffQ+cQIE5gWc6MlY0=
+          accept-flake-config = true

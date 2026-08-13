@@ -5,8 +5,8 @@
 # series applies cleanly to the pinned upstream tarball" is the invariant that
 # makes patches-as-source-of-truth safe.
 #
-# NOTE: not yet exercised on the self-hosted runners -- treat the runner and
-# cache wiring as a first draft to be confirmed on the first real run.
+# Runner/cache wiring is exercised on `rehosting-arc`; see
+# .github/actions/nix-setup for why that setup is a local composite action.
 name: nix (patch series + kernels)
 
 on:
@@ -43,8 +43,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # install-nix-action trips over root-owned /nix on these runners.
-      - uses: rehosting/nix-setup@v1
+      - uses: ./.github/actions/nix-setup
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch the pinned upstream tarball
         id: tarball
@@ -72,7 +73,9 @@ jobs:
         cell: ["4.10-armel", "6.13-armel"]
     steps:
       - uses: actions/checkout@v4
-      - uses: rehosting/nix-setup@v1
+      - uses: ./.github/actions/nix-setup
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build kernel, perf and module
         run: |
@@ -96,7 +99,7 @@ jobs:
               | cachix push rehosting-tools
           done
 
-  # The full 20-cell matrix, on demand. Not on every PR: it is the expensive
+  # The full 19-cell matrix, on demand. Not on every PR: it is the expensive
   # one, and the gate above catches the failures that are not arch-specific.
   full:
     name: full matrix
@@ -105,13 +108,15 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_matrix }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rehosting/nix-setup@v1
+      - uses: ./.github/actions/nix-setup
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Every kernel
         run: nix build --print-out-paths ".#all"
 
       # Built separately from `.#all` so a perf or module failure is
-      # attributable at a glance rather than buried in a 20-cell aggregate.
+      # attributable at a glance rather than buried in a 19-cell aggregate.
       - name: Every perf and module
         run: |
           set -euo pipefail
