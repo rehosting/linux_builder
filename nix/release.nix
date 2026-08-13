@@ -12,14 +12,10 @@
 # dropped rather than faked, and the provenance that matters -- the store path
 # each artifact came from -- is recorded instead.
 #
-# KNOWN CONTRACT GAP: perf.<target>. build.sh cross-builds a static perf per
-# cell, but its failure is swallowed (`|| echo "Warning: Failed to build perf"`,
-# then a `[ -f ]` guard), so the shipped tarball already contains whatever
-# happened to compile that day -- perf coverage is unstated and unenforced. No
-# consumer of perf.* was found in penguin. It is omitted here rather than
-# reproduced half-working; if it turns out to matter, it needs a target libc,
-# which loongarch64's kernel-only toolchain does not have (see kernelsmith's
-# matrix.k6LoongarchKernel), so that cell could never ship one anyway.
+# perf.<target> is built for EVERY cell -- see nix/perf.nix. build.sh swallows
+# perf build failures, so rehosting/penguin:latest ships perf for only 3 of 13
+# targets (armel, loongarch64, mips64el) without that ever being a decision.
+# Here a failing arch fails the build instead.
 { pkgs }:
 
 let
@@ -45,6 +41,7 @@ rec {
           done
           cp ${c.osi} $out/osi.${c.target}.config
           cp ${c.cosi} $out/cosi.${c.target}.json.xz
+          cp ${c.perf}/perf.${c.target} $out/perf.${c.target}
         '')
         cells}
 

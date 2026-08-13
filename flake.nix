@@ -87,6 +87,7 @@
       # penguin to a flake input is a separate, later change.
       analysisLib = import ./nix/analysis.nix { inherit pkgs; };
       releaseLib = import ./nix/release.nix { inherit pkgs; };
+      mkPerf = import ./nix/perf.nix { inherit pkgs kernelsmith; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map
@@ -95,6 +96,11 @@
             inherit version target kernel;
             osi = analysisLib.osiConfig { inherit kernel version target; };
             cosi = analysisLib.cosiJson { inherit kernel version target; };
+            perf = mkPerf {
+              inherit version target;
+              src = sources.${version};
+              inherit (kernel) arch;
+            };
           })
         (buildable version);
 
