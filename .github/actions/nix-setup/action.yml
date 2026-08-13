@@ -21,6 +21,18 @@ inputs:
 runs:
   using: composite
   steps:
+    # The nix installer unpacks an .xz tarball and the rehosting-arc image ships
+    # without xz, so install-nix-action dies with "you do not have 'xz'
+    # installed" after successfully downloading the installer. Every repo in the
+    # org that runs Nix on these runners apt-installs it first.
+    - shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v xz >/dev/null; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xz-utils curl
+        fi
+
     - uses: cachix/install-nix-action@v27
       with:
         github_access_token: ${{ inputs.github_token }}
