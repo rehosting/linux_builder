@@ -14,6 +14,14 @@ on:
   pull_request:
   push:
     branches: [main, nix-patchset]
+    # Cut a nix-built PRERELEASE from a tag, without touching the version line.
+    #
+    # Deliberately NOT `dev_*`: that prefix already triggers the Docker
+    # workflow (build.yml), so a shared prefix would have both pipelines cut a
+    # release for the same tag and race `version-increment` for the same vX.Y.Z.
+    # `nixdev_*` does not match `dev_*` -- these globs are anchored -- so the two
+    # stay independent while both release paths exist.
+    tags: ['nixdev_*']
   workflow_dispatch:
     inputs:
       full_matrix:
@@ -114,13 +122,24 @@ jobs:
               ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
           done
 
-  # The full 19-cell matrix, on demand. Not on every PR: it is the expensive
-  # one, and the gate above catches the failures that are not arch-specific.
+  # The full 19-cell matrix: on demand, and on a `nixdev_*` tag, where it is
+  # also what produces the release. Not on every PR -- it is the expensive one,
+  # and the gate above catches the failures that are not arch-specific.
+  #
+  # Running it on the tag has a second effect that matters for downstream
+  # testing: this is a push event, so nix-setup's skip-push default does NOT
+  # apply and every path built here lands in rehosting-tools. A consumer that
+  # pins this flake (rehosting/penguin#932) then SUBSTITUTES all 19 kernels
+  # instead of cross-building them in its own CI.
   full:
     name: full matrix
     runs-on: rehosting-arc
     needs: series
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_matrix }}
+    permissions:
+      contents: write
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' && inputs.full_matrix)
+          || startsWith(github.ref, 'refs/tags/nixdev_') }}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare runner directories
@@ -168,5 +187,48 @@ jobs:
 
       - name: Release tarballs assemble
         run: |
-          nix build --print-out-paths .#kernels-latest
-          nix build --print-out-paths .#kernel-devel-all
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-kernels      .#kernels-latest
+          nix build --print-out-paths --out-link result-kernel-devel .#kernel-devel-all
+          # Copy out of the store: the outputs are read-only files whose store
+          # names already match, but the upload needs real files in the workdir.
+          cp -L result-kernels      kernels-latest.tar.gz
+          cp -L result-kernel-devel kernel-devel-all.tar.gz
+          chmod u+w kernels-latest.tar.gz kernel-devel-all.tar.gz
+          ls -l kernels-latest.tar.gz kernel-devel-all.tar.gz
+
+      # Manifest of what the nix path actually ships, in the log, so a reviewer
+      # can diff it against the Docker release without downloading anything.
+      - name: Manifest
+        run: |
+          tar tzf kernels-latest.tar.gz | sed 's|^\./||' | grep -v '/$' | sort
+          echo "--- perf coverage ---"
+          for v in 4.10 6.13; do
+            tot=$(tar tzf kernels-latest.tar.gz | grep -c "kernels/$v/osi\..*\.config" || true)
+            perf=$(tar tzf kernels-latest.tar.gz | grep -c "kernels/$v/perf\." || true)
+            echo "  $v: perf for $perf of $tot targets"
+          done
+
+      # Prerelease only, and only from a nixdev_* tag. The tag IS the version --
+      # no version-increment here, so this cannot collide with the Docker
+      # pipeline's vX.Y.Z line while both exist.
+      - name: Publish prerelease
+        if: ${{ startsWith(github.ref, 'refs/tags/nixdev_') }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            kernels-latest.tar.gz
+            kernel-devel-all.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }} (nix, prerelease)
+          prerelease: true
+          body: |
+            Built by the **nix + patch series** path (linux_builder#59), not the
+            Docker pipeline. Prerelease, for downstream testing only -- it does
+            not participate in the `vX.Y.Z` version line.
+
+            Differs from the Docker release in exactly two ways:
+            * `perf` for all 19 cells (the Docker path shipped 7 of 19)
+            * no `powerpcle` -- it was byte-identical to `powerpc` and
+              big-endian despite the name
