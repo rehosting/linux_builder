@@ -114,9 +114,20 @@ jobs:
         with:
           # See the note in the (removed) per-job build step / penguin c35bedc5:
           # don't pin moby/buildkit:master -- it regressed on the kernel-5.4
-          # runners (can't mask /proc/acpi). Default pinned-stable buildkit + the
-          # insecure Harbor registry config.
+          # runners (can't mask /proc/acpi).
+          #
+          # Relying on setup-buildx-action's *default* image is no longer enough:
+          # the default has since moved onto a buildkit carrying the same
+          # regression, and this workflow started failing with
+          #
+          #   can't mask dir "/proc/acpi": mount src=tmpfs, dst=/proc/acpi,
+          #   flags=MS_RDONLY, data=nr_blocks=1,nr_inodes=1: invalid argument
+          #
+          # main has not run since 2026-07-28 so it has not caught up with the
+          # drift yet. Pin the last known-good buildkit explicitly, matching the
+          # pin igloo-dev already applies in its source-nightly publish.
           driver-opts: |
+            image=moby/buildkit:v0.30.0
             network=host
           buildkitd-config-inline: |
             [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
