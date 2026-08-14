@@ -13,9 +13,6 @@
     # the embedded-toolchains Docker image, whose toolchains were unversioned
     # `wget https://musl.cc/*-cross.tgz` downloads -- i.e. today's shipped
     # kernels have no recorded compiler identity.
-    # NB: flake.lock currently pins this AHEAD of main, to the k4-x86_64
-    # binutils fix (kernelsmith#5) that 4.10/x86_64 needs to boot at all.
-    # Re-lock to main once that merges; the url needs no change.
     kernelsmith.url = "github:rehosting/kernelsmith";
     nixpkgs.follows = "kernelsmith/nixpkgs";
 
