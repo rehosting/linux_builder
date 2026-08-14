@@ -22,11 +22,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1786743798,
-        "narHash": "sha256-M7F4Eu1ws3WKR34KxBm1CHdwARha7i5QCd0lKjxrs7w=",
+        "lastModified": 1786744385,
+        "narHash": "sha256-linrkYJ63mdakHdQStEPgUeII3Tn/NGKFBQVCs3QB0w=",
         "owner": "rehosting",
         "repo": "kernelsmith",
-        "rev": "a6b66282cccfcfa610a9c8d7d9fff5bb20906dfa",
+        "rev": "03d99e438ecab7a6ffb4d2a3072ef78269b2573c",
         "type": "github"
       },
       "original": {
