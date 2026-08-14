@@ -122,6 +122,14 @@ jobs:
               ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
           done
 
+      # Does the kernel actually RUN. Every other gate here passed the
+      # 4.10/x86_64 image that printed nothing at all -- see nix/boot.nix.
+      - name: Kernel boots
+        run: |
+          nix build --print-build-logs \
+            ".#packages.x86_64-linux.\"boot-${{ matrix.cell }}\""
+
+
   # The full 19-cell matrix: on demand, and on a `nixdev_*` tag, where it is
   # also what produces the release. Not on every PR -- it is the expensive one,
   # and the gate above catches the failures that are not arch-specific.
@@ -184,6 +192,12 @@ jobs:
       # builds cleanly and produces the wrong machine's binary.
       - name: Shapes match target names
         run: nix build --print-out-paths .#shape-check
+
+      # Boot every cell. Slower than the rest of this job put together on some
+      # arches, and the only check that would have stopped nixdev_0.1.0's
+      # non-booting 4.10/x86_64 from being published.
+      - name: Every kernel boots
+        run: nix build --print-build-logs --print-out-paths .#boot-check
 
       - name: Release tarballs assemble
         run: |
