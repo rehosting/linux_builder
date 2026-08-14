@@ -99,6 +99,7 @@
       releaseLib = import ./nix/release.nix { inherit pkgs; };
       mkPerf = import ./nix/perf.nix { inherit pkgs kernelsmith; };
       mkDriver = import ./nix/driver.nix { inherit pkgs kernelsmith; };
+      bootLib = import ./nix/boot.nix { inherit pkgs; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map
@@ -130,6 +131,11 @@
           (lib.nameValuePair "driver-${r.version}-${r.target}" r.driver)
           (lib.nameValuePair "osi-${r.version}-${r.target}" r.osi)
           (lib.nameValuePair "cosi-${r.version}-${r.target}" r.cosi)
+          # The one check that asks whether the kernel RUNS. Individually
+          # addressable so a dead cell can be reproduced in one command:
+          #   nix build .#packages.x86_64-linux."boot-4.10-x86_64"
+          (lib.nameValuePair "boot-${r.version}-${r.target}"
+            (bootLib.forCell { inherit (r) kernel version target; }))
         ])
         allRecords);
 
@@ -170,6 +176,11 @@
         # artifact whose ELF class or endianness disagrees with its target name.
         # See nix/shape.nix -- two such bugs shipped undetected on this branch.
         shape-check = (import ./nix/shape.nix { inherit pkgs; }) { cells = allRecords; };
+
+        # Catches the strictly worse failure class shape-check cannot see: an
+        # artifact of exactly the right shape and size that does not run at all.
+        # nixdev_0.1.0's 4.10/x86_64 is one -- see nix/boot.nix.
+        boot-check = bootLib.all { cells = allRecords; };
 
         # The analysis tools, pinned. Exposed so their provenance is inspectable
         # and so igloo_driver can reuse dwarf2json for its own ISF (it runs the
