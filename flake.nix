@@ -142,6 +142,19 @@
         all = pkgs.linkFarm "igloo-kernels-all"
           (lib.mapAttrsToList (n: v: { name = n; path = v; }) cells);
 
+        # The same payload as kernels-latest, but as a directory. This is the
+        # seam for Nix consumers: penguin stages `<version>/...` straight into
+        # /igloo_static/kernels/, so handing it the tree avoids packing an
+        # archive purely for the consumer to unpack again.
+        kernels = releaseLib.kernelsTree {
+          versions = map
+            (version: {
+              inherit version;
+              dir = releaseLib.kernelsDir { inherit version; cells = cellRecords version; };
+            })
+            (builtins.attrNames matrix);
+        };
+
         # Drop-in replacements for the Docker build's release artifacts.
         kernels-latest = releaseLib.kernelsTarball {
           versions = map

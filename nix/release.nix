@@ -50,13 +50,22 @@ rec {
       for f in $(ls $out/osi.*.config | sort); do cat "$f" >> $out/osi.config; done
     '';
 
-  kernelsTarball = { versions }:
-    pkgs.runCommand "kernels-latest.tar.gz" { nativeBuildInputs = [ pkgs.gzip ]; } ''
-      mkdir -p stage/kernels
+  # The tarball's payload as a plain directory: `<version>/<artifacts>`, which is
+  # exactly the layout penguin lays down at /igloo_static/kernels/.
+  #
+  # Exposed separately so a Nix consumer can take the tree directly instead of
+  # the archive. penguin's flake currently pins the release TARBALL
+  # (`inputs.kernels`, flake = false) and relies on Nix unpacking it; going
+  # through kernelsTarball from another flake would mean tar-then-untar of
+  # ~335 MB to reproduce a directory this already has. Same contents either way
+  # -- kernelsTarball is defined in terms of this.
+  kernelsTree = { versions }:
+    pkgs.runCommand "igloo-kernels" { } ''
+      mkdir -p $out
       ${lib.concatMapStringsSep "\n"
-        (v: ''cp -a ${v.dir} stage/kernels/${v.version}'')
+        (v: ''cp -a ${v.dir} $out/${v.version}'')
         versions}
-      chmod -R u+w stage
+      chmod -R u+w $out
 
       # Deliberately not the Docker build's `Built by linux_builder on $(date)`:
       # a timestamp would make the archive non-reproducible for no benefit.
@@ -68,8 +77,14 @@ rec {
         'Provenance is the store path of each input, not a build date -- these' \
         'artifacts are a pure function of the pinned kernel tarball, the patch' \
         'series in patches/, the config in configs/, and the kernelsmith toolchain.' \
-        > stage/kernels/README.txt
+        > $out/README.txt
+    '';
 
+  kernelsTarball = { versions }:
+    pkgs.runCommand "kernels-latest.tar.gz" { nativeBuildInputs = [ pkgs.gzip ]; } ''
+      mkdir -p stage
+      cp -a ${kernelsTree { inherit versions; }} stage/kernels
+      chmod -R u+w stage
       tar ${reproTar} -cf - -C stage kernels | gzip -9n > $out
     '';
 
