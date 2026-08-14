@@ -13,8 +13,20 @@
     # the embedded-toolchains Docker image, whose toolchains were unversioned
     # `wget https://musl.cc/*-cross.tgz` downloads -- i.e. today's shipped
     # kernels have no recorded compiler identity.
+    # NB: flake.lock currently pins this AHEAD of main, to the k4-x86_64
+    # binutils fix (kernelsmith#5) that 4.10/x86_64 needs to boot at all.
+    # Re-lock to main once that merges; the url needs no change.
     kernelsmith.url = "github:rehosting/kernelsmith";
     nixpkgs.follows = "kernelsmith/nixpkgs";
+
+    # qemu ONLY, for nix/boot.nix. Deliberately not `nixpkgs`: the kernel build
+    # pins 24.05 (qemu 8.2.7), which predates nixpkgs shipping
+    # edk2-loongarch64-code.fd -- and loongarch64's kernel_fmt is vmlinuz.efi,
+    # a PE image that needs EFI firmware to boot at all. Pinning the harness's
+    # qemu separately also stops "what the kernel builds against" and "what we
+    # boot on" from being forced to move together; the second should track what
+    # penguin runs, which is never a four-year-old qemu.
+    nixpkgs-qemu.url = "github:NixOS/nixpkgs/nixos-25.05";
 
     # Source only -- igloo_driver has no flake of its own yet. This is here to
     # ACCEPTANCE-TEST the kernel `dev` output (see nix/driver.nix): a build tree
@@ -28,10 +40,11 @@
   };
 
   outputs =
-    { self, nixpkgs, kernelsmith, igloo_driver }:
+    { self, nixpkgs, nixpkgs-qemu, kernelsmith, igloo_driver }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      qemuPkgs = nixpkgs-qemu.legacyPackages.${system};
       inherit (pkgs) lib;
 
       # Upstream bases. These are REAL RELEASE TAGS -- the point of the patchset
@@ -99,7 +112,7 @@
       releaseLib = import ./nix/release.nix { inherit pkgs; };
       mkPerf = import ./nix/perf.nix { inherit pkgs kernelsmith; };
       mkDriver = import ./nix/driver.nix { inherit pkgs kernelsmith; };
-      bootLib = import ./nix/boot.nix { inherit pkgs; };
+      bootLib = import ./nix/boot.nix { inherit pkgs qemuPkgs; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map

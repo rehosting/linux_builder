@@ -18,10 +18,14 @@
 # -- deliberately, so this boots each kernel on the machine penguin will actually
 # run it on. A kernel that boots under some other qemu model is not the claim
 # anyone downstream needs.
-{ pkgs }:
+# `qemuPkgs` is a SEPARATE nixpkgs from `pkgs` -- see flake.nix's nixpkgs-qemu
+# input. The kernel build's pin is 24.05, whose qemu is 8.2.7 and ships no
+# loongarch64 EFI firmware, so that target could not be booted at all.
+{ pkgs, qemuPkgs }:
 
 let
   inherit (pkgs) lib;
+  qemu = qemuPkgs.qemu;
 
   # target -> how penguin boots it. `null` means "no qemu machine exists",
   # which is DECLARED here rather than silently skipped.
@@ -35,7 +39,18 @@ let
     powerpc64 = { system = "ppc64"; machine = "pseries"; cpu = "power9"; console = "hvc0"; };
     powerpc64le = { system = "ppc64"; machine = "pseries"; cpu = "power9"; console = "hvc0"; };
     riscv64 = { system = "riscv64"; machine = "virt"; console = "ttyS0"; };
-    loongarch64 = { system = "loongarch64"; machine = "virt"; cpu = "la464"; console = "ttyS0"; };
+    # loongarch64 needs two things no other target here does, and penguin
+    # supplies both -- see penguin_run.py's `-bios edk2-loongarch64-code.fd`.
+    #   `mem`:  qemu's virt machine refuses to start below 1G
+    #           ("ram_size must be greater than 1G")
+    #   `bios`: its kernel_fmt is vmlinuz.efi, a PE image, so the built-in
+    #           loader rejects it ("The image is not ELF"). EFI firmware is
+    #           what boots it. Booting the ELF vmlinux instead would pass this
+    #           test while testing an image penguin never runs.
+    loongarch64 = {
+      system = "loongarch64"; machine = "virt"; cpu = "la464"; console = "ttyS0";
+      mem = 2048; bios = "edk2-loongarch64-code.fd";
+    };
     x86_64 = { system = "x86_64"; machine = "pc"; console = "ttyS0"; };
 
     # 32-bit powerpc: arch_registry.py records qemu_machine=None -- "no QEMU
@@ -45,21 +60,37 @@ let
     powerpc = null;
   };
 
-  # The kernel image each target ships, by extension of what kernelsDir copies.
-  # Globbed rather than tabulated: the artifact name varies by arch
-  # (zImage./bzImage./vmlinux./Image.) and duplicating that table here is one
-  # more thing to drift.
+  # The kernel image each target ships. Genuinely globbed -- an earlier version
+  # of this claimed to glob but actually hard-coded four names
+  # (bzImage/zImage/Image/vmlinux), and 6.13/loongarch64 ships
+  # `vmlinuz.efi.loongarch64`, so it failed as "no bootable image" while the
+  # kernel itself was fine. Every artifact is named `<image>.<target>`, so
+  # match on that suffix and rank the hits: prefer whatever the arch's boot
+  # wrapper produces, fall back to raw vmlinux.
   bootTest = { kernel, version, target, spec }:
     pkgs.runCommand "igloo-boot-${version}-${target}"
       {
-        nativeBuildInputs = [ pkgs.qemu ];
+        nativeBuildInputs = [ qemu ];
         meta.description = "boot smoke test for ${version}/${target}";
       } ''
+      # Rank every *.${target} artifact; first match wins. vmlinux is last
+      # deliberately: where an arch ships both, the wrapped image is what
+      # penguin boots, so that is what this must test.
       img=""
-      for cand in ${kernel}/bzImage.${target} ${kernel}/zImage.${target} \
-                  ${kernel}/Image.${target} ${kernel}/vmlinux.${target}; do
+      for pat in bzImage zImage vmlinuz.efi vmlinuz uImage Image vmlinux; do
+        cand="${kernel}/$pat.${target}"
         [ -f "$cand" ] && { img="$cand"; break; }
       done
+      # Nothing ranked matched -- take any *.${target} regular file rather than
+      # failing, so a new arch's novel image name is a warning, not an outage.
+      if [ -z "$img" ]; then
+        for cand in ${kernel}/*.${target}; do
+          [ -f "$cand" ] || continue
+          case "$(basename "$cand")" in Module.symvers*|config*|*.map) continue;; esac
+          echo "warning: unranked image name $(basename "$cand") -- add it to the rank list" >&2
+          img="$cand"; break
+        done
+      fi
       if [ -z "$img" ]; then
         echo "no bootable image for ${version}/${target} in ${kernel}" >&2
         ls ${kernel} >&2
@@ -77,7 +108,8 @@ let
       timeout 120 qemu-system-${spec.system} \
         -M ${spec.machine} \
         ${lib.optionalString (spec ? cpu) "-cpu ${spec.cpu}"} \
-        -m 256 -nographic -no-reboot \
+        ${lib.optionalString (spec ? bios) "-bios ${qemu}/share/qemu/${spec.bios}"} \
+        -m ${toString (spec.mem or 256)} -nographic -no-reboot \
         -kernel "$img" \
         -append "console=${spec.console} panic=1" \
         < /dev/null > boot.log 2>&1 || true
@@ -87,11 +119,19 @@ let
 
       # Two assertions, in increasing strength.
       #
-      # 1. The kernel banner. This alone is what nixdev_0.1.0's 4.10/x86_64
-      #    failed: it decompressed, printed "Booting the kernel.", and went
-      #    silent forever.
-      if ! grep -q "Linux version" boot.log; then
-        echo "FAIL ${version}/${target}: no kernel banner -- it never started" >&2
+      # 1. The kernel produced kernel log output at all. This is what
+      #    nixdev_0.1.0's 4.10/x86_64 failed: it decompressed, printed
+      #    "Booting the kernel.", and went silent forever.
+      #
+      #    Matching the "Linux version" banner ALONE is too strict: on
+      #    loongarch64 the EFI stub hands over after the console is set up, so
+      #    the earliest printks -- the banner among them -- never reach the
+      #    serial log, and a kernel that booted all the way to a root-fs panic
+      #    was reported as never having started. A timestamped printk is the
+      #    portable evidence of "the kernel is running"; the dead x86_64 image
+      #    emitted none.
+      if ! grep -Eq "Linux version|^\[[ ]*[0-9]+\.[0-9]+\]" boot.log; then
+        echo "FAIL ${version}/${target}: no kernel output at all -- it never started" >&2
         exit 1
       fi
 
