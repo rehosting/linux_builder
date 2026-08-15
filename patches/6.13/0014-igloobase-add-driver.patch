@@ -1,0 +1,723 @@
+From 9aaca4d6a58568055ae73955430756b9a70fc55f Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:10:02 -0400
+Subject: [PATCH 14/37] igloobase: add driver
+
+---
+ drivers/Kconfig                          |   2 +
+ drivers/Makefile                         |   3 +
+ drivers/igloobase/Kconfig                |   5 +
+ drivers/igloobase/Makefile               |   2 +
+ drivers/igloobase/igloo_args.c           | 118 ++++++++++
+ drivers/igloobase/igloo_weaksyms.c       | 112 +++++++++
+ drivers/igloobase/igloobase.c            |  28 +++
+ drivers/igloobase/igloobase.h            |   2 +
+ drivers/igloobase/igloobasehypercalls.h  |   6 +
+ drivers/igloobase/osi_notifier.c         |  55 +++++
+ drivers/igloobase/syscalls_info_report.c | 281 +++++++++++++++++++++++
+ 11 files changed, 614 insertions(+)
+ create mode 100644 drivers/igloobase/Kconfig
+ create mode 100644 drivers/igloobase/Makefile
+ create mode 100644 drivers/igloobase/igloo_args.c
+ create mode 100644 drivers/igloobase/igloo_weaksyms.c
+ create mode 100644 drivers/igloobase/igloobase.c
+ create mode 100644 drivers/igloobase/igloobase.h
+ create mode 100644 drivers/igloobase/igloobasehypercalls.h
+ create mode 100644 drivers/igloobase/osi_notifier.c
+ create mode 100644 drivers/igloobase/syscalls_info_report.c
+
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 7bdad836fc..f08fe9f627 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -245,4 +245,6 @@ source "drivers/cdx/Kconfig"
+ 
+ source "drivers/dpll/Kconfig"
+ 
++source "drivers/igloobase/Kconfig"
++
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 45d1c3e630..02d636d913 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -195,3 +195,6 @@ obj-$(CONFIG_CDX_BUS)		+= cdx/
+ obj-$(CONFIG_DPLL)		+= dpll/
+ 
+ obj-$(CONFIG_S390)		+= s390/
++
++# Added
++obj-y += igloobase/
+\ No newline at end of file
+diff --git a/drivers/igloobase/Kconfig b/drivers/igloobase/Kconfig
+new file mode 100644
+index 0000000000..b20c5df509
+--- /dev/null
++++ b/drivers/igloobase/Kconfig
+@@ -0,0 +1,5 @@
++config IGLOO
++	bool "IGLOO module support"
++	default y
++	help
++      Support for IGLOO analysis
+\ No newline at end of file
+diff --git a/drivers/igloobase/Makefile b/drivers/igloobase/Makefile
+new file mode 100644
+index 0000000000..1865aadfbb
+--- /dev/null
++++ b/drivers/igloobase/Makefile
+@@ -0,0 +1,2 @@
++obj-$(CONFIG_IGLOO) += osi_notifier.o syscalls_info_report.o \
++						igloobase.o igloo_weaksyms.o igloo_args.o
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloo_args.c b/drivers/igloobase/igloo_args.c
+new file mode 100644
+index 0000000000..bdb65d1fbc
+--- /dev/null
++++ b/drivers/igloobase/igloo_args.c
+@@ -0,0 +1,118 @@
++#include <linux/kernel.h>
++#include <linux/fs.h>
++#include <linux/net.h>
++#include <linux/socket.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/syscalls.h>
++#include <asm/unistd.h>
++#include <asm/syscall.h>
++#include "igloo_syscall_macros.h"
++#include "igloo.h"
++
++
++/**
++ * Early params originally from igloo_hc.c in the module
++ */
++unsigned long igloo_task_size = 0;
++static int __init early_igloo_task_size(char *p)
++{
++    unsigned long task_size;
++    if (kstrtoul(p, 0, &task_size) < 0 ) {
++        pr_warn("Could not parse igloo_task_size parameter %s\n", p);
++        return -1;
++    }
++    igloo_task_size = task_size;
++    pr_warn_once("Using igloo_task_size: 0x%lx\n", igloo_task_size);
++    return 0;
++}
++early_param("igloo_task_size", early_igloo_task_size);
++EXPORT_SYMBOL(igloo_task_size);
++
++bool igloo_block_halt=false;
++
++static int __init early_igloo_block_halt(char *p)
++{
++    unsigned long block_halt;
++    if (kstrtoul(p, 0, &block_halt) < 0 ) {
++        pr_warn("Could not parse igloo_block_halt parameter %s. Set to 0 (default) or 1\n", p);
++        return -1;
++    }
++    igloo_block_halt = (block_halt > 0);
++    pr_warn_once("Using igloo_block_halt: %d\n", igloo_block_halt);
++    return 0;
++}
++
++early_param("igloo_block_halt", early_igloo_block_halt);
++EXPORT_SYMBOL(igloo_block_halt);
++
++// Debug logging configuration for each module
++struct igloo_debug_config {
++    bool portal;       // Enable debug for portal module
++    bool uprobe;       // Enable debug for uprobe module
++    bool vma;          // Enable debug for VMA tracking
++    bool syscall;      // Enable debug for syscall tracking
++    bool osi;          // Enable debug for OSI features
++};
++
++// Global debug configuration
++struct igloo_debug_config igloo_debug = {
++    .portal = false,
++    .uprobe = false,
++    .vma = false,
++    .syscall = false,
++    .osi = false,
++};
++
++// Parse comma-separated list of modules to enable debug logging for
++static int __init early_igloo_debug_modules(char *p)
++{
++    char *token;
++
++    // By default, all modules have debug disabled
++    memset(&igloo_debug, 0, sizeof(igloo_debug));
++
++    // Special case: "all" enables all modules
++    if (!strcmp(p, "all")) {
++        memset(&igloo_debug, 1, sizeof(igloo_debug));
++        pr_warn_once("IGLOO: Debug enabled for all modules\n");
++        return 0;
++    }
++
++    // Special case: "none" disables all modules (default)
++    if (!strcmp(p, "none")) {
++        memset(&igloo_debug, 0, sizeof(igloo_debug));
++        pr_warn_once("IGLOO: Debug disabled for all modules\n");
++        return 0;
++    }
++
++    // Parse comma-separated module list
++    while ((token = strsep(&p, ",")) != NULL) {
++        if (!strcmp(token, "portal"))
++            igloo_debug.portal = true;
++        else if (!strcmp(token, "uprobe"))
++            igloo_debug.uprobe = true;
++        else if (!strcmp(token, "vma"))
++            igloo_debug.vma = true;
++        else if (!strcmp(token, "syscall"))
++            igloo_debug.syscall = true;
++        else if (!strcmp(token, "osi"))
++            igloo_debug.osi = true;
++        else if (!strcmp(token, "all")){
++            memset(&igloo_debug, 1, sizeof(igloo_debug));
++            pr_warn_once("IGLOO: Debug enabled for all modules\n");
++            return 0;
++        }
++        else
++            pr_warn("IGLOO: Unknown debug module: %s\n", token);
++    }
++
++    pr_warn_once("IGLOO: Debug modules - portal:%d uprobe:%d vma:%d syscall:%d osi:%d\n",
++               igloo_debug.portal, igloo_debug.uprobe, igloo_debug.vma,
++               igloo_debug.syscall, igloo_debug.osi);
++
++    return 0;
++}
++
++early_param("igloo_debug", early_igloo_debug_modules);
++EXPORT_SYMBOL(igloo_debug);
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+new file mode 100644
+index 0000000000..8498d15500
+--- /dev/null
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -0,0 +1,112 @@
++#include <linux/kernel.h>
++#include <linux/fs.h>
++#include <linux/net.h>
++#include <linux/socket.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/syscalls.h>
++#include <asm/unistd.h>
++#include <asm/syscall.h>
++#include "igloo_syscall_macros.h"
++#include "igloo.h"
++
++/* Syscall hooks */
++igloo_syscall_enter_t igloo_syscall_enter_hook = NULL;
++igloo_syscall_return_t igloo_syscall_return_hook = NULL;
++EXPORT_SYMBOL(igloo_syscall_enter_hook);
++EXPORT_SYMBOL(igloo_syscall_return_hook);
++
++// Function pointer for override
++bool (*igloo_should_block_mount_module)(struct path *path);
++bool igloo_should_block_mount(struct path *path);
++bool igloo_should_block_mount(struct path *path)
++{
++    if (igloo_should_block_mount_module) {
++        return igloo_should_block_mount_module(path);
++    } else {
++        // printk(KERN_INFO "igloo_should_block_mount: default implementation called\n");
++        return false;
++    }
++}
++EXPORT_SYMBOL(igloo_should_block_mount);
++
++void (*igloo_sock_release_module)(struct socket *sock);
++void igloo_sock_release(struct socket *sock)
++{
++    if (igloo_sock_release_module) {
++        igloo_sock_release_module(sock);
++    } else {
++        // printk(KERN_EMERG "igloo_sock_release: unimplemented\n");
++    }
++}
++EXPORT_SYMBOL(igloo_sock_release);
++
++void (*igloo_sock_bind_module)(struct socket *sock, struct sockaddr_storage *address);
++void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address)
++{
++    if (igloo_sock_bind_module) {
++        igloo_sock_bind_module(sock, address);
++    } else {
++        // printk(KERN_EMERG "igloo_sock_bind: unimplemented\n");
++    }
++}
++EXPORT_SYMBOL(igloo_sock_bind);
++
++void (*igloo_hc_newuname_module)(struct new_utsname *name) = NULL;
++void igloo_hc_newuname(struct new_utsname *name)
++{
++    if (igloo_hc_newuname_module) {
++        igloo_hc_newuname_module(name);
++    } else {
++        // printk(KERN_EMERG "igloo_hc_newuname: unimplemented\n");
++    }
++}
++EXPORT_SYMBOL(igloo_hc_newuname);
++
++void (*igloo_hc_open_module)(int dfd, const char __user *filename, struct open_how *how);
++void igloo_hc_open(int dfd, const char __user *filename, struct open_how *how);
++void igloo_hc_open(int dfd, const char __user *filename, struct open_how *how)
++{
++    if (igloo_hc_open_module) {
++        igloo_hc_open_module(dfd, filename, how);
++    } else {
++        // printk(KERN_EMERG "igloo_hc_open: unimplemented\n");
++    }
++}
++EXPORT_SYMBOL(igloo_hc_open);
++
++void (*igloo_ioctl_module)(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
++void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
++void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp)
++{
++    if (igloo_ioctl_module) {
++        igloo_ioctl_module(error, inode, filp, cmd, argp);
++    } else {
++        // printk(KERN_EMERG "igloo_ioctl: unimplemented\n");
++    }
++}
++EXPORT_SYMBOL(igloo_ioctl);
++
++/* Export internal symbols needed for introspection research */
++
++// Symbol lookup functions - now pulled in by trace/syscall.h
++EXPORT_SYMBOL(kallsyms_lookup);
++
++extern unsigned long kallsyms_lookup_name(const char *name);
++EXPORT_SYMBOL(kallsyms_lookup_name);
++
++// Architecture-specific functions
++extern const char *arch_vma_name(struct vm_area_struct *vma);
++EXPORT_SYMBOL(arch_vma_name);
++
++// Process management
++extern pid_t kernel_clone(struct kernel_clone_args *args);
++EXPORT_SYMBOL(kernel_clone);
++
++extern int kill_pid_info(int sig, struct kernel_siginfo *info, struct pid *pid);
++EXPORT_SYMBOL(kill_pid_info);
++
++// Memory access
++extern int access_remote_vm(struct mm_struct *mm, unsigned long addr,
++                           void *buf, int len, unsigned int gup_flags);
++EXPORT_SYMBOL(access_remote_vm);
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloobase.c b/drivers/igloobase/igloobase.c
+new file mode 100644
+index 0000000000..005835633c
+--- /dev/null
++++ b/drivers/igloobase/igloobase.c
+@@ -0,0 +1,28 @@
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include "igloo.h"
++#include "igloobase.h"
++
++
++/* Register probes for mmap and munmap */
++static int __init igloo_base_init(void) {
++	printk(KERN_EMERG "IGLOOBase: Initializing\n");
++	int ret = 0;
++    if ((ret = osi_notifier_init()) != 0) {
++        printk(KERN_ERR "Failed to register osi_notifier_init\n");
++    }
++    if ((ret = syscalls_info_report()) != 0) {
++		printk(KERN_ERR "Failed to register syscalls_hc returning %d\n", ret);
++	}
++	return 0;
++}
++
++/* Unregister probes */
++static void __exit igloo_base_exit(void) {
++    // Unreachable, module is built in
++    printk(KERN_ERR "TODO\n");
++}
++
++module_init(igloo_base_init);
++module_exit(igloo_base_exit);
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloobase.h b/drivers/igloobase/igloobase.h
+new file mode 100644
+index 0000000000..3fe72b89a0
+--- /dev/null
++++ b/drivers/igloobase/igloobase.h
+@@ -0,0 +1,2 @@
++int osi_notifier_init(void);
++int syscalls_info_report(void);
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloobasehypercalls.h b/drivers/igloobase/igloobasehypercalls.h
+new file mode 100644
+index 0000000000..f7fa8b985e
+--- /dev/null
++++ b/drivers/igloobase/igloobasehypercalls.h
+@@ -0,0 +1,6 @@
++// This should be a relatively small file as most functionality should be
++// implemented in the core igloo driver
++
++enum igloo_base_hypercalls {
++    IGLOO_HYP_SETUP_SYSCALL = 0x1337,
++};
+\ No newline at end of file
+diff --git a/drivers/igloobase/osi_notifier.c b/drivers/igloobase/osi_notifier.c
+new file mode 100644
+index 0000000000..b9ed55d799
+--- /dev/null
++++ b/drivers/igloobase/osi_notifier.c
+@@ -0,0 +1,55 @@
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/kprobes.h>
++#include <linux/mm.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include "hypercall.h"
++#include <linux/binfmts.h>
++#include <linux/ptrace.h>
++#include <linux/utsname.h>
++#include <linux/types.h>
++#include <linux/module.h>	/* Needed by all modules */
++#include <linux/kernel.h>	/* Needed for KERN_INFO */
++#include <linux/utsname.h>
++#include <linux/version.h>
++#include <linux/syscalls.h>
++#include <linux/security.h>
++#include <linux/sched.h>
++#include <linux/mm.h>
++#include <linux/fs.h>
++#include <linux/file.h>
++#include <linux/fdtable.h>
++#include <linux/dcache.h>
++#include <linux/mount.h>
++#include <linux/version.h>
++#include <asm/syscall.h>
++#include <linux/tracepoint.h>
++#include <linux/trace_events.h>
++#include <trace/events/sched.h>
++#include "igloo.h"
++#include "igloobase.h"
++
++#define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
++
++// Define a tracepoint probe function for sched_switch with the correct signature
++static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
++                               struct task_struct *next, unsigned int prev_state)
++{
++    // Notify hypervisor about task switch using task pointers
++    igloo_hypercall2(IGLOO_HYP_OSI_TASK_SWITCH, (unsigned long)prev, (unsigned long)next);
++}
++
++int osi_notifier_init(void) {
++    int ret = 0;
++
++    // Register the sched_switch tracepoint
++    ret = register_trace_sched_switch(probe_sched_switch, NULL);
++    if (ret) {
++        printk(KERN_ERR "IGLOO: Failed to register sched_switch tracepoint, returned %d\n", ret);
++    } else {
++        printk(KERN_INFO "IGLOO: Successfully registered sched_switch tracepoint\n");
++    }
++    return 0;
++}
+\ No newline at end of file
+diff --git a/drivers/igloobase/syscalls_info_report.c b/drivers/igloobase/syscalls_info_report.c
+new file mode 100644
+index 0000000000..9927c02e3e
+--- /dev/null
++++ b/drivers/igloobase/syscalls_info_report.c
+@@ -0,0 +1,281 @@
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/kprobes.h>
++#include <linux/mm.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/ftrace.h>
++#include <asm/ftrace.h>
++#include <linux/binfmts.h>
++#include <linux/ptrace.h>
++#include <linux/syscalls.h>
++#include <trace/syscall.h>
++#include <asm/syscall.h>
++#include "hypercall.h" // Content is now included directly below
++#include "igloo.h"
++#include "igloobase.h"
++#include "igloobasehypercalls.h"
++
++extern struct syscall_metadata *__start_syscalls_metadata[];
++extern struct syscall_metadata *__stop_syscalls_metadata[];
++
++#ifndef ARCH_HAS_SYSCALL_MATCH_SYM_NAME
++static inline bool arch_syscall_match_sym_name(const char *sym, const char *name)
++{
++	/*
++	 * Only compare after the "sys" prefix. Archs that use
++	 * syscall wrappers may have syscalls symbols aliases prefixed
++	 * with ".SyS" or ".sys" instead of "sys", leading to an unwanted
++	 * mismatch.
++	 */
++	return !strcmp(sym + 3, name + 3);
++}
++#endif
++
++/* Normalize syscall names by removing common prefixes like 'sys_', '_sys_', 'compat_sys_' */
++static inline const char *normalize_syscall_name(const char *name)
++{
++    if (!name)
++        return NULL;
++        
++    /* Skip leading underscores (e.g. _sys_) */
++    while (*name == '_')
++        name++;
++        
++    /* Check for 'sys_' prefix */
++    if (strncmp(name, "sys_", 4) == 0)
++        return name + 4;
++        
++    /* Check for 'compat_sys_' prefix */
++    if (strncmp(name, "compat_sys_", 11) == 0)
++        return name + 11;
++    
++    /* Check for other arch-specific prefixes */
++    if (strncmp(name, "arm64_sys_", 10) == 0)
++        return name + 10;
++    
++    if (strncmp(name, "riscv_sys_", 10) == 0)
++        return name + 10;
++        
++    return name;
++}
++
++// copied from trace_syscalls.c
++static struct syscall_metadata *
++find_syscall_meta_copy(unsigned long syscall);
++static struct syscall_metadata *
++find_syscall_meta_copy(unsigned long syscall)
++{
++	struct syscall_metadata **start;
++	struct syscall_metadata **stop;
++	char str[KSYM_SYMBOL_LEN];
++
++
++	start = __start_syscalls_metadata;
++	stop = __stop_syscalls_metadata;
++	kallsyms_lookup(syscall, NULL, NULL, NULL, str);
++
++	if (arch_syscall_match_sym_name(str, "sys_ni_syscall"))
++		return NULL;
++
++	for ( ; start < stop; start++) {
++		if ((*start)->name && arch_syscall_match_sym_name(str, (*start)->name))
++			return *start;
++	}
++	return NULL;
++}
++
++static void report_syscall(char * buffer, struct syscall_metadata *meta){
++    if (!meta || !meta->name) {
++        return; // Skip invalid metadata
++    }
++    // Prepare JSON metadata for hypercall (ensure buffer is large enough)
++    int x = snprintf(buffer, PAGE_SIZE,
++                   "{\"name\": \"%s\", \"args\":[",
++                    normalize_syscall_name(meta->name));
++
++    for (int j = 0; j < meta->nb_args && x > 0 && x < PAGE_SIZE; j++) {
++        // Append args safely, checking remaining buffer space
++        x += snprintf((char*)buffer + x, PAGE_SIZE - x, "[\"%s\", \"%s\"]%s",
++                      meta->types[j] ? meta->types[j] : "?", // Handle potential NULL type/arg names
++                      meta->args[j] ? meta->args[j] : "?",
++                      j + 1 < meta->nb_args ? ", " : "");
++    }
++
++    if (x > 0 && x < PAGE_SIZE) {
++         x += snprintf((char*)buffer + x, PAGE_SIZE - x, "]}");
++    }
++
++    if (x <= 0 || x >= PAGE_SIZE) {
++        //  DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
++         // Decide how to handle: skip this probe or abort? Skipping for now.
++         return;
++    }
++    // Send metadata via hypercall (call returns value, but it's ignored here)
++    igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
++}
++
++// normalize_syscall_name is now defined in syscalls_hc.h
++
++#ifdef CONFIG_COMPAT
++/* For ARM64 */
++#if defined(CONFIG_ARM64)
++extern const syscall_fn_t compat_sys_call_table[];
++/* Don't redeclare sys_call_table as it's already in syscall.h with correct type */
++#define COMPAT_TABLE_SIZE __NR_compat32_syscalls
++
++/* For x86_64 */
++// #elif defined(CONFIG_X86_64)
++// /* Use void* instead of syscall_fn_t for broader compatibility */
++// extern const void * const ia32_sys_call_table[];
++// #define compat_sys_call_table ia32_sys_call_table
++// #define COMPAT_TABLE_SIZE IA32_NR_syscalls
++
++/* For MIPS64 */
++#elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
++/* Use the correct declaration that matches what's in syscall.h */
++#include <asm/syscall.h>  /* Ensure we get the right declaration */
++#define compat_sys_call_table sys32_call_table 
++#define COMPAT_TABLE_SIZE NR_syscalls  /* Use NR_syscalls instead of __NR_syscalls */
++
++/* For PPC64 */
++// #elif defined(CONFIG_PPC64)
++// extern void *sys32_call_table[];
++// #define compat_sys_call_table sys32_call_table
++// #define COMPAT_TABLE_SIZE __NR_syscalls
++
++/* For RISC-V64 */
++#elif defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
++/* Use the correct declaration for RISC-V - it's already properly declared in syscall.h */
++#define COMPAT_TABLE_SIZE __NR_syscalls
++#endif
++#endif
++
++/* Get syscall name from a function pointer */
++#ifdef CONFIG_COMPAT
++static const char *get_syscall_name_from_func(void *func_ptr) {
++    char sym[KSYM_SYMBOL_LEN];
++    
++    if (!func_ptr || IS_ERR(func_ptr))
++        return NULL;
++        
++    kallsyms_lookup((unsigned long)func_ptr, NULL, NULL, NULL, sym);
++    
++    /* Skip if we couldn't identify the symbol */
++    if (!sym[0])
++        return NULL;
++    
++    /* Skip the "sys_" or similar prefix */
++    if (strncmp(sym, "sys_", 4) == 0)
++        return kstrdup(sym, GFP_KERNEL);
++    else if (strncmp(sym, "compat_sys_", 11) == 0) 
++        return kstrdup(sym + 7, GFP_KERNEL); /* Return without the "compat_" prefix */
++    else if (strncmp(sym, "__arm64_", 8) == 0)
++        return kstrdup(sym + 8, GFP_KERNEL); /* Return without the "__arm64_" prefix */
++    else if (strncmp(sym, "__loongarch_", 12) == 0)
++        return kstrdup(sym + 12, GFP_KERNEL); /* Return without the "__loongarch_" prefix */
++    else if (strncmp(sym, "__riscv_", 8) == 0)
++        return kstrdup(sym + 8, GFP_KERNEL); /* Return without the "__riscv_" prefix */
++    else if (strncmp(sym, "__se_", 5) == 0)
++        return kstrdup(sym + 5, GFP_KERNEL); /* Return without the "__se_" prefix */
++    
++    return kstrdup(sym, GFP_KERNEL);
++}
++
++static void report_syscall_from_func(char *buffer, void *func_ptr, int syscall_nr) {
++    const char *name;
++    int x;
++    
++    if (!func_ptr || IS_ERR(func_ptr))
++        return;
++    
++    name = get_syscall_name_from_func(func_ptr);
++    if (!name)
++        return;
++    
++    /* Create a simplified metadata report for compat syscalls */
++    x = snprintf(buffer, PAGE_SIZE, "{\"name\": \"%s\", \"compat\": true, \"args\":\"unknown\"}", 
++                normalize_syscall_name(name));
++    
++    if (x > 0 && x < PAGE_SIZE) {
++        /* Send this metadata via hypercall */
++        igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
++    }
++    
++    kfree(name);
++}
++#endif
++
++int syscalls_info_report(void) {
++    printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
++    struct syscall_metadata **p = __start_syscalls_metadata;
++    struct syscall_metadata **end = __stop_syscalls_metadata;
++
++    void *buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
++    
++    if (!buffer) {
++        printk(KERN_ERR "IGLOO: Failed to allocate memory for syscall metadata buffer\n");
++        return -ENOMEM;
++    }
++
++    // Count the number of syscalls
++    int num_syscall_probes = end - p;
++    if (num_syscall_probes <= 0) {
++        printk(KERN_WARNING "IGLOO: No syscall metadata found.\n");
++        return -EINVAL;
++    }
++
++    // Process regular syscalls first
++    int i;
++    for (i = 0; i < NR_syscalls+1000; i++) {
++        struct syscall_metadata *meta;
++        unsigned long addr;
++        addr = arch_syscall_addr(i);
++        meta = find_syscall_meta_copy(addr);
++        if (!meta)
++            continue;
++        meta->syscall_nr = i;
++        report_syscall(buffer, meta);
++    }
++
++    for (p = __start_syscalls_metadata; p < end; p++) {
++        struct syscall_metadata *meta = *p;
++        if (!meta) {
++            continue; // Skip invalid metadata
++        }
++        report_syscall(buffer, meta);
++    }
++    
++    // Process compat syscalls
++#ifdef CONFIG_COMPAT
++#ifdef COMPAT_TABLE_SIZE
++    printk(KERN_INFO "IGLOO: Processing compat syscall table with %d entries\n", COMPAT_TABLE_SIZE);
++    
++    for (i = 0; i < COMPAT_TABLE_SIZE; i++) {
++#if defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
++        /* For RISC-V, use the already declared variable without casting */
++        void *func_ptr = compat_sys_call_table[i];
++#elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
++        /* For MIPS64, handle the unsigned long array correctly */
++        void *func_ptr = (void *)(unsigned long)compat_sys_call_table[i];
++#else
++        /* For other architectures, use proper casting based on architecture pointer size */
++        void *func_ptr = (void *)(uintptr_t)compat_sys_call_table[i];
++#endif
++        
++        /* Skip non-existent syscalls (usually NULL) */
++        if (!func_ptr || IS_ERR(func_ptr)) {
++            continue;
++        }
++            
++        report_syscall_from_func(buffer, func_ptr, i);
++    }
++#else
++    printk(KERN_INFO "IGLOO: No compat syscall table found for this architecture\n");
++#endif
++#endif
++
++    kfree(buffer);
++    return 0;
++}
+\ No newline at end of file

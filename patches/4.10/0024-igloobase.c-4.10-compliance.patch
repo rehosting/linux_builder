@@ -1,0 +1,23 @@
+From a824f3d1d264a2cccaa724a01f20eaec42174835 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sat, 20 Sep 2025 18:08:44 -0400
+Subject: [PATCH 24/38] igloobase.c: 4.10 compliance
+
+---
+ drivers/igloobase/igloobase.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/igloobase/igloobase.c b/drivers/igloobase/igloobase.c
+index 005835633c..7462e9ee4c 100644
+--- a/drivers/igloobase/igloobase.c
++++ b/drivers/igloobase/igloobase.c
+@@ -7,8 +7,8 @@
+ 
+ /* Register probes for mmap and munmap */
+ static int __init igloo_base_init(void) {
++	int ret;
+ 	printk(KERN_EMERG "IGLOOBase: Initializing\n");
+-	int ret = 0;
+     if ((ret = osi_notifier_init()) != 0) {
+         printk(KERN_ERR "Failed to register osi_notifier_init\n");
+     }

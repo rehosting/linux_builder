@@ -1,0 +1,69 @@
+From 68996875436ed6bd835047465f364916d468d394 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sun, 17 May 2026 13:21:20 -0400
+Subject: [PATCH 38/38] igloo: move into signal handler
+
+---
+ include/linux/igloo_signal.h | 12 ++++++++++++
+ kernel/signal.c              | 15 +++++++++++++++
+ 2 files changed, 27 insertions(+)
+ create mode 100644 include/linux/igloo_signal.h
+
+diff --git a/include/linux/igloo_signal.h b/include/linux/igloo_signal.h
+new file mode 100644
+index 0000000000..375b5ee68b
+--- /dev/null
++++ b/include/linux/igloo_signal.h
+@@ -0,0 +1,12 @@
++#ifndef _LINUX_IGLOO_SIGNAL_H
++#define _LINUX_IGLOO_SIGNAL_H
++
++#include <linux/types.h>
++
++struct task_struct;
++
++typedef bool (*igloo_signal_deliver_hook_t)(int sig, struct task_struct *task);
++
++extern igloo_signal_deliver_hook_t igloo_signal_deliver_hook;
++
++#endif /* _LINUX_IGLOO_SIGNAL_H */
+diff --git a/kernel/signal.c b/kernel/signal.c
+index 3603d93a19..72976c1210 100644
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -34,6 +34,9 @@
+ #include <linux/compat.h>
+ #include <linux/cn_proc.h>
+ #include <linux/compiler.h>
++#ifdef CONFIG_IGLOO
++#include <linux/igloo_signal.h>
++#endif
+ 
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/signal.h>
+@@ -51,6 +54,11 @@
+ 
+ static struct kmem_cache *sigqueue_cachep;
+ 
++#ifdef CONFIG_IGLOO
++igloo_signal_deliver_hook_t igloo_signal_deliver_hook;
++EXPORT_SYMBOL_GPL(igloo_signal_deliver_hook);
++#endif
++
+ int print_fatal_signals __read_mostly;
+ 
+ static void __user *sig_handler(struct task_struct *t, int sig)
+@@ -986,6 +994,13 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
+ 	assert_spin_locked(&t->sighand->siglock);
+ 
+ 	result = TRACE_SIGNAL_IGNORED;
++#ifdef CONFIG_IGLOO
++	if (sig && igloo_signal_deliver_hook &&
++	    igloo_signal_deliver_hook(sig, t)) {
++		ret = 0;
++		goto ret;
++	}
++#endif
+ 	if (!prepare_signal(sig, t,
+ 			from_ancestor_ns || (info == SEND_SIG_FORCED)))
+ 		goto ret;

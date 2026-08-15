@@ -1,0 +1,53 @@
+From c115ca46444956b69960b85abeed3a112d6e17a8 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sat, 20 Sep 2025 18:08:32 -0400
+Subject: [PATCH 23/38] igloo_weaksyms: forward proper types for 4.10
+
+---
+ drivers/igloobase/igloo_weaksyms.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+index 9e7e5c6639..3057659f1a 100644
+--- a/drivers/igloobase/igloo_weaksyms.c
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -5,6 +5,7 @@
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/syscalls.h>
++#include <linux/version.h>
+ #include <asm/unistd.h>
+ #include <asm/syscall.h>
+ #include "igloo_syscall_macros.h"
+@@ -91,18 +92,31 @@ EXPORT_SYMBOL(igloo_ioctl);
+ // Symbol lookup functions - now pulled in by trace/syscall.h
+ EXPORT_SYMBOL(kallsyms_lookup);
+ 
++
++// version not confirmed
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
+ extern unsigned long kallsyms_lookup_name(const char *name);
+ EXPORT_SYMBOL(kallsyms_lookup_name);
++#endif
+ 
+ // Architecture-specific functions
+ extern const char *arch_vma_name(struct vm_area_struct *vma);
+ EXPORT_SYMBOL(arch_vma_name);
+ 
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
+ // Process management
+ extern pid_t kernel_clone(struct kernel_clone_args *args);
+ EXPORT_SYMBOL(kernel_clone);
++#else
++// we will need another version here
++#endif
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
+ extern int kill_pid_info(int sig, struct kernel_siginfo *info, struct pid *pid);
++#else
++extern int kill_pid_info(int sig, struct siginfo *info, struct pid *pid); 
++#endif
+ EXPORT_SYMBOL(kill_pid_info);
+ 
+ // Memory access

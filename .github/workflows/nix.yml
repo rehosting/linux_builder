@@ -1,0 +1,304 @@
+# The patch-series gate, plus a representative build per version.
+#
+# Without this gate the series model degrades silently: someone edits a tree,
+# forgets to export, and the committed series stops describing reality. "The
+# series applies cleanly to the pinned upstream tarball" is the invariant that
+# makes patches-as-source-of-truth safe.
+#
+# Nix install + Cachix wiring comes from rehosting/ci/actions/nix-setup, the
+# org's shared action. Per its skip-push default, PR runs PULL from
+# rehosting-tools but do not push; pushes to main populate it.
+name: nix (patch series + kernels)
+
+on:
+  pull_request:
+  push:
+    branches: [main, nix-patchset]
+    # Cut a nix-built PRERELEASE from a tag, without touching the version line.
+    #
+    # The prefix is `nixdev_*` rather than `dev_*` for a reason that has now
+    # expired: `dev_*` triggered the Docker workflow (build.yml), and a shared
+    # prefix would have had both pipelines cut a release for the same tag and
+    # race `version-increment` for the same vX.Y.Z. build.yml is gone, so the
+    # collision is impossible -- but the prefix stays, because nixdev_0.1.0 and
+    # nixdev_0.1.1 are already published and pinned by downstream lockfiles.
+    tags: ['nixdev_*']
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Build every cell (kernel + perf + driver), not just the gate"
+        type: boolean
+        default: false
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The Arc pods run as a uid with no passwd entry, so $USER/$LOGNAME are unset
+# and HOME-relative caches are not writable. `cachix use` fails outright with
+# "$USER must be set. If running in a container, try setting USER=root." These
+# four are a precondition for running Nix on this runner pool, not decoration --
+# rehosting/qemu's workflow carries the same block for the same reason.
+env:
+  USER: runner
+  LOGNAME: runner
+  TMPDIR: /home/runner/_work/_temp
+  XDG_CACHE_HOME: /home/runner/_work/.cache
+
+jobs:
+  series:
+    name: series applies (${{ matrix.version }})
+    runs-on: rehosting-arc
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["4.10", "6.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
+
+      - name: Fetch the pinned upstream tarball
+        id: tarball
+        run: |
+          set -euo pipefail
+          TAG=$(python3 -c "import json;print(json.load(open('patches/base.json'))['${{ matrix.version }}']['tag'])")
+          MAJOR="${TAG%%.*}"
+          URL="https://cdn.kernel.org/pub/linux/kernel/v${MAJOR}.x/linux-${TAG}.tar.xz"
+          echo "path=$(nix-prefetch-url --print-path "$URL" | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Series applies cleanly to pristine upstream
+        run: ./scripts/verify-series.sh "${{ matrix.version }}" "${{ steps.tarball.outputs.path }}"
+
+  # The fast gate: one cell per version, and for each of them the three
+  # artifacts that have historically failed independently of the kernel --
+  # perf (silently skipped for 10 of 13 targets in the shell build), and the
+  # module (which is what proves the `dev` build tree is actually usable).
+  build:
+    name: build ${{ matrix.cell }}
+    runs-on: rehosting-arc
+    needs: series
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ["4.10-armel", "6.13-armel"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
+
+      - name: Build kernel, perf and module
+        run: |
+          set -euo pipefail
+          for out in kernel perf driver; do
+            nix build --print-out-paths \
+              ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
+          done
+
+      # Does the kernel actually RUN. Every other gate here passed the
+      # 4.10/x86_64 image that printed nothing at all -- see nix/boot.nix.
+      - name: Kernel boots
+        run: |
+          nix build --print-build-logs \
+            ".#packages.x86_64-linux.\"boot-${{ matrix.cell }}\""
+
+
+  # The full 19-cell matrix: on demand, on a `nixdev_*` tag, and on a merge to
+  # main -- in the last two cases it is also what produces the release. Not on
+  # every PR: it is the expensive one, and the gate above catches the failures
+  # that are not arch-specific.
+  #
+  # Running it on the tag has a second effect that matters for downstream
+  # testing: this is a push event, so nix-setup's skip-push default does NOT
+  # apply and every path built here lands in rehosting-tools. A consumer that
+  # pins this flake (rehosting/penguin#932) then SUBSTITUTES all 19 kernels
+  # instead of cross-building them in its own CI.
+  full:
+    name: full matrix
+    runs-on: rehosting-arc
+    needs: series
+    permissions:
+      contents: write
+    # Also on a push to main: with the Docker pipeline gone, this job is the
+    # ONLY thing that cuts a release, so a merge has to run the whole matrix.
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' && inputs.full_matrix)
+          || startsWith(github.ref, 'refs/tags/nixdev_')
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
+
+      - name: Every kernel
+        run: nix build --print-out-paths ".#all"
+
+      # Built separately from `.#all` so a perf or module failure is
+      # attributable at a glance rather than buried in a 19-cell aggregate.
+      - name: Every perf and module
+        run: |
+          set -euo pipefail
+          cells=$(nix eval --json ".#packages.x86_64-linux" --apply \
+            'p: builtins.filter (n: builtins.match "(perf|driver)-.*" n != null)
+                  (builtins.attrNames p)' | python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)))')
+          fail=0
+          for c in $cells; do
+            if nix build --no-link ".#packages.x86_64-linux.\"$c\""; then
+              echo "OK   $c"
+            else
+              echo "FAIL $c"; fail=1
+            fi
+          done
+          exit $fail
+
+      # Every artifact's ELF class and byte order must match what its target
+      # name claims. Cheap, and it is the only check that catches a cell which
+      # builds cleanly and produces the wrong machine's binary.
+      - name: Shapes match target names
+        run: nix build --print-out-paths .#shape-check
+
+      # Boot every cell. Slower than the rest of this job put together on some
+      # arches, and the only check that would have stopped nixdev_0.1.0's
+      # non-booting 4.10/x86_64 from being published.
+      - name: Every kernel boots
+        run: nix build --print-build-logs --print-out-paths .#boot-check
+
+      # The config contract: does every cell END UP with the options IGLOO
+      # needs? Reads the post-olddefconfig .config, not the fragments, because
+      # olddefconfig silently drops options whose dependencies are unmet -- so
+      # a fragment saying CONFIG_MODVERSIONS=y proves nothing about what
+      # shipped. Sibling of the boot check: both exist for kernels that build
+      # and boot and then quietly do not do their job.
+      - name: Configs satisfy the IGLOO contract
+        run: nix build --print-build-logs --print-out-paths .#config-required
+
+      # Advisory, so it must not fail the job -- but the output belongs in the
+      # log where a config change can be reviewed against it.
+      - name: Config redundancy report (advisory)
+        continue-on-error: true
+        run: |
+          out=$(nix build --no-link --print-out-paths .#config-redundant)
+          cat "$out"
+
+      - name: Release tarballs assemble
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-kernels      .#kernels-latest
+          nix build --print-out-paths --out-link result-kernel-devel .#kernel-devel-all
+          # Copy out of the store: the outputs are read-only files whose store
+          # names already match, but the upload needs real files in the workdir.
+          cp -L result-kernels      kernels-latest.tar.gz
+          cp -L result-kernel-devel kernel-devel-all.tar.gz
+          chmod u+w kernels-latest.tar.gz kernel-devel-all.tar.gz
+          ls -l kernels-latest.tar.gz kernel-devel-all.tar.gz
+
+      # Manifest of what the nix path actually ships, in the log, so a reviewer
+      # can diff it against the Docker release without downloading anything.
+      - name: Manifest
+        run: |
+          tar tzf kernels-latest.tar.gz | sed 's|^\./||' | grep -v '/$' | sort
+          echo "--- perf coverage ---"
+          for v in 4.10 6.13; do
+            tot=$(tar tzf kernels-latest.tar.gz | grep -c "kernels/$v/osi\..*\.config" || true)
+            perf=$(tar tzf kernels-latest.tar.gz | grep -c "kernels/$v/perf\." || true)
+            echo "  $v: perf for $perf of $tot targets"
+          done
+
+      # Prerelease from a nixdev_* tag: the tag IS the version, no increment.
+      # Kept distinct from the vX.Y.Z release below so a downstream repo can be
+      # handed a fixed, immutable kernel set to test against without that
+      # consuming a version number.
+      - name: Publish prerelease
+        if: ${{ startsWith(github.ref, 'refs/tags/nixdev_') }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            kernels-latest.tar.gz
+            kernel-devel-all.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }} (nix, prerelease)
+          prerelease: true
+          body: |
+            Built by the **nix + patch series** path (linux_builder#59), not the
+            Docker pipeline. Prerelease, for downstream testing only -- it does
+            not participate in the `vX.Y.Z` version line.
+
+            Differs from the Docker release in exactly two ways:
+            * `perf` for all 19 cells (the Docker path shipped 7 of 19)
+            * no `powerpcle` -- it was byte-identical to `powerpc` and
+              big-endian despite the name
+
+      # ---- the vX.Y.Z version line -------------------------------------
+      # Ported from the deleted build.yml. With the Docker pipeline gone this
+      # is the only thing that cuts a real release, so it lives here now; the
+      # collision hazard that kept the two apart no longer exists.
+      #
+      # `use_api: true` reads GIT TAGS via /git/matching-refs/tags/, takes the
+      # highest by `sort -V`, and applies `increment` (default: patch). So the
+      # way to move the version LINE is to push a bare marker tag at main's tip
+      # and let the patch increment continue from it -- v4.0.0 -> v4.0.1.
+      #
+      # Do NOT set `increment: minor` to force a jump. It is not self-clearing,
+      # so it silently bumps the release AFTER it as well, until someone
+      # remembers to revert. The marker tag has no such landmine.
+      - name: Get next version
+        id: version
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: reecetech/version-increment@2023.10.1
+        with:
+          use_api: true
+
+      - name: Publish release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            kernels-latest.tar.gz
+            kernel-devel-all.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          generate_release_notes: true
+          prerelease: false

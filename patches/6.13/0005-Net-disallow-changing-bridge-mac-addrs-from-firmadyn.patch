@@ -1,0 +1,26 @@
+From bd7d61d4636fb7a5b18d99c3a3bf718bbbf600ff Mon Sep 17 00:00:00 2001
+From: Andrew Fasano <fasano@mit.edu>
+Date: Mon, 18 Dec 2023 09:59:33 -0500
+Subject: [PATCH 05/37] Net: disallow changing bridge mac addrs (from
+ firmadyne. Unnecessary?)
+
+---
+ net/core/dev.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index a9f62f5aeb..7888f2e4ff 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -9213,6 +9213,11 @@ int dev_set_mac_address(struct net_device *dev, struct sockaddr *sa,
+ 	const struct net_device_ops *ops = dev->netdev_ops;
+ 	int err;
+ 
++	if (dev->priv_flags & IFF_EBRIDGE) {
++		//Changing bridge mac-addrs only causes issues
++		return 0;
++	}
++
+ 	if (!ops->ndo_set_mac_address)
+ 		return -EOPNOTSUPP;
+ 	if (sa->sa_family != dev->type)

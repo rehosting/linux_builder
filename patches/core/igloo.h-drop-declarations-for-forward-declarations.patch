@@ -1,0 +1,23 @@
+From 3f0f02b4c0872f1d7cf61a6282800e9b98c233b4 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Sat, 20 Sep 2025 18:10:12 -0400
+Subject: [PATCH 28/38] igloo.h: drop declarations for forward declarations
+
+---
+ include/igloo.h | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/include/igloo.h b/include/igloo.h
+index 45e1dcd81c..1de6832e81 100644
+--- a/include/igloo.h
++++ b/include/igloo.h
+@@ -10,9 +10,6 @@ extern bool igloo_block_halt; // reboot.c
+ struct user_arg_ptr;  // Forward declaration
+ struct syscall_metadata; // Forward declaration for syscall metadata functions
+ 
+-void igloo_sock_release(struct socket *sock);
+-void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
+-void igloo_hc_newuname(struct new_utsname *name);
+ unsigned long igloo_arch_syscall_addr(int nr);
+ 
+ /* Syscall metadata access functions */

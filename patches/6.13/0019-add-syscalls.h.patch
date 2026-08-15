@@ -1,0 +1,163 @@
+From cda5584e72c3325d41ba492b58672968e896c7ad Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Fri, 1 Aug 2025 11:22:08 -0400
+Subject: [PATCH 19/37] add syscalls.h
+
+---
+ include/linux/syscalls.h | 119 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 109 insertions(+), 10 deletions(-)
+
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index c6333204d..09d13ebf2 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -213,14 +213,68 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
+ }
+ #endif
+ 
++#ifdef CONFIG_IGLOO
++#include <igloo_syscall_macros.h>
++/* === Igloo Interception Hooks and Helpers === */
++
++/* Pointers to the actual hook functions */
++extern igloo_syscall_enter_t igloo_syscall_enter_hook;
++extern igloo_syscall_return_t igloo_syscall_return_hook;
++#else /* CONFIG_IGLOO not defined */
++
++/* Define stubs or original macros if Igloo is disabled */
++#define igloo_syscall_enter_hook NULL
++#define igloo_syscall_return_hook NULL
++#endif /* CONFIG_IGLOO */
++
++
++/* --- Definition for __PROTECT --- */
++#ifndef __PROTECT
++#define __PROTECT(...) asmlinkage_protect(__VA_ARGS__)
++#endif /* __PROTECT */
+ #ifndef SYSCALL_DEFINE0
+-#define SYSCALL_DEFINE0(sname)					\
+-	SYSCALL_METADATA(_##sname, 0);				\
+-	asmlinkage long sys_##sname(void);			\
+-	ALLOW_ERROR_INJECTION(sys_##sname, ERRNO);		\
+-	asmlinkage long sys_##sname(void)
++#define SYSCALL_DEFINE0(name)					\
++	SYSCALL_METADATA(_##name, 0);              \
++	asmlinkage long sys_##name(void);			\
++	ALLOW_ERROR_INJECTION(sys_##name, ERRNO);		\
++	static inline long __do_sys_##name(void); /* Declare impl */		\
++	asmlinkage long sys_##name(void)				\
++	{								\
++		const char *syscall_basename = __stringify(name); /* Base name */ \
++		long ret;						\
++		bool skip = false;					\
++		long skip_ret = 0;					\
++		/* Array for arguments (empty for 0 args) */		\
++		unsigned long args_array[IGLOO_SYSCALL_MAXARGS] = {0}; \
++									\
++		/* === Igloo Enter Hook === */				\
++		if (igloo_syscall_enter_hook) {				\
++			/* Pass NULL for setter func for 0-arg syscalls */ \
++			skip = igloo_syscall_enter_hook(syscall_basename, &skip_ret, 0, args_array, NULL); \
++		}							\
++									\
++		if (skip) {						\
++			ret = skip_ret;					\
++		} else {						\
++			ret = __do_sys_##name();			\
++		}							\
++									\
++		/* === Igloo Return Hook === */				\
++		if (igloo_syscall_return_hook) {			\
++			ret = igloo_syscall_return_hook(syscall_basename, ret, 0, args_array); \
++		}							\
++									\
++		/* Argument protection and final return */		\
++		__PROTECT(0, ret); /* Protect for 0 args */		\
++		return ret;						\
++	}								\
++	/* User's syscall code defines the __do_sys_##name function */	\
++	static inline long __do_sys_##name(void)
+ #endif /* SYSCALL_DEFINE0 */
+ 
++
++/* --- Modified SYSCALL_DEFINE1..6 & SYSCALL_DEFINEx --- */
++/* Pass base name AND internal (_name) to SYSCALL_DEFINEx */
+ #define SYSCALL_DEFINE1(name, ...) SYSCALL_DEFINEx(1, _##name, __VA_ARGS__)
+ #define SYSCALL_DEFINE2(name, ...) SYSCALL_DEFINEx(2, _##name, __VA_ARGS__)
+ #define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
+@@ -229,12 +283,13 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
+ #define SYSCALL_DEFINE6(name, ...) SYSCALL_DEFINEx(6, _##name, __VA_ARGS__)
+ 
+ #define SYSCALL_DEFINE_MAXARGS	6
++#define SYSCALL_DEFINEx(x, name, ...)				\
++	 SYSCALL_METADATA(name, x, __VA_ARGS__)			\
++	 __SYSCALL_DEFINEx(x, name, __VA_ARGS__)
+ 
+-#define SYSCALL_DEFINEx(x, sname, ...)				\
+-	SYSCALL_METADATA(sname, x, __VA_ARGS__)			\
+-	__SYSCALL_DEFINEx(x, sname, __VA_ARGS__)
+ 
+-#define __PROTECT(...) asmlinkage_protect(__VA_ARGS__)
++/* --- Modified __SYSCALL_DEFINEx --- */
++/* Note: Added 'name' (base name) parameter */
+ 
+ /*
+  * The asmlinkage stub is aliased to a function named __se_sys_*() which
+@@ -249,12 +304,56 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
+ 	asmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))	\
+ 		__attribute__((alias(__stringify(__se_sys##name))));	\
+ 	ALLOW_ERROR_INJECTION(sys##name, ERRNO);			\
++	 	/* Implementation function declaration */			\
+ 	static inline long __do_sys##name(__MAP(x,__SC_DECL,__VA_ARGS__));\
++	 /* Setter function definition: Body generated using __SC_GEN_SETTER_BODY_WRAPPER */ \
++	void __igloo_set_args##name(const unsigned long args_ptr_array[], const __le64 new_args_le64[]); \
++	void __igloo_set_args##name(const unsigned long args_ptr_array[], const __le64 new_args_le64[]) \
++	{								\
++		__SC_GEN_SETTER_BODY_WRAPPER(x, __VA_ARGS__);		\
++	}								\
++	/* Sign-extended wrapper function definition */			\
+ 	asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__));	\
+ 	asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__))	\
+ 	{								\
+-		long ret = __do_sys##name(__MAP(x,__SC_CAST,__VA_ARGS__));\
++		const char *syscall_basename = __stringify(name); /* Base name */ \
++		long ret;						\
++		bool skip = false;					\
++		long skip_ret = 0;					\
++		/* Declare ONE array for argument pointers */		\
++		unsigned long args_ptr_array[IGLOO_SYSCALL_MAXARGS] = {0}; \
++									\
++		/* Populate args_ptr_array with ADDRESSES for the enter hook */ \
++		__SC_ASSIGN_ADDR_WRAPPER(x, args_ptr_array, __VA_ARGS__); \
++									\
++		/* === Igloo Enter Hook === */				\
++		if (igloo_syscall_enter_hook) {				\
++			/* Pass setter function pointer unconditionally (except for 0 args) */ \
++			/* The hook is responsible for handling const args correctly. */ \
++			skip = igloo_syscall_enter_hook(syscall_basename, &skip_ret, x, \
++						 args_ptr_array, __igloo_set_args##name); \
++		}							\
++									\
++		if (skip) {						\
++			/* Syscall skipped by hook */			\
++			ret = skip_ret;					\
++		} else {						\
++			/* Execute actual syscall implementation */		\
++			/* Arguments used here are potentially modified */	\
++			/* by the enter hook via the setter function */		\
++			ret = __do_sys##name(__MAP(x, __SC_CAST, __VA_ARGS__));\
++		}							\
++									\
++		/* Original type tests */				\
+ 		__MAP(x,__SC_TEST,__VA_ARGS__);				\
++		 \
++		 /* === Igloo Return Hook === */				\
++		 if (igloo_syscall_return_hook) {			\
++			 ret = igloo_syscall_return_hook(syscall_basename, ret, x, \
++						   args_ptr_array); 		\
++		 }							\
++									 \
++		 /* Argument protection and final return */		\
+ 		__PROTECT(x, ret,__MAP(x,__SC_ARGS,__VA_ARGS__));	\
+ 		return ret;						\
+ 	}								\

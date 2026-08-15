@@ -1,0 +1,48 @@
+From 9eeec2a5ceb7c677a7096ff1e4f2fd789ec516a7 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Mon, 22 Sep 2025 10:58:13 -0400
+Subject: [PATCH 31/38] compat.h: formatting and forward declare
+
+---
+ include/linux/compat.h | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/compat.h b/include/linux/compat.h
+index 8c02fb57e2..941faf7ac2 100644
+--- a/include/linux/compat.h
++++ b/include/linux/compat.h
+@@ -39,6 +39,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ #endif
+ 
+ #define COMPAT_SYSCALL_DEFINE0(name) \
++	static inline long __do_compat_sys_##name(void);	\
+ 	asmlinkage long compat_sys_##name(void)  \
+ 	{										\
+ 		const char *syscall_basename = __stringify(name); /* Base name */ \
+@@ -47,7 +48,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 		long skip_ret = 0;					\
+ 		/* Array for arguments (empty for 0 args) */ \
+ 		unsigned long args_array[IGLOO_SYSCALL_MAXARGS] = {0}; \
+-		
++		\
+ 		/* === Igloo Enter Hook === */ \
+ 		if (igloo_syscall_enter_hook) {	\
+ 			/* Pass NULL for setter func for 0-arg syscalls */ \
+@@ -66,7 +67,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 		}								\
+ 										\
+ 		return ret ;					\
+-	}
++	} \
+ 	static inline long __do_compat_sys_##name(void)
+ 
+ 
+@@ -92,7 +93,7 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 	void __compat_igloo_set_args##name(const unsigned long args_ptr_array[], const __le64 new_args_le64[]) \
+ 	{								\
+ 		__SC_GEN_SETTER_BODY_WRAPPER(x, __VA_ARGS__);		\
+-	}	
++	}	\
+ 	asmlinkage long compat_SyS##name(__MAP(x,__SC_LONG,__VA_ARGS__));\
+ 	asmlinkage long compat_SyS##name(__MAP(x,__SC_LONG,__VA_ARGS__))\
+ 	{								\
