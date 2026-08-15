@@ -110,12 +110,20 @@
       mkPerf = import ./nix/perf.nix { inherit pkgs kernelsmith; };
       mkDriver = import ./nix/driver.nix { inherit pkgs kernelsmith; };
       bootLib = import ./nix/boot.nix { inherit pkgs qemuPkgs; };
+      lintLib = import ./nix/lint.nix { inherit pkgs; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map
         (target:
           let kernel = cells."kernel-${version}-${target}"; in {
             inherit version target kernel;
+            # Carried so nix/lint.nix can re-run savedefconfig over exactly the
+            # tree and fragment this cell was built from.
+            src = sources.${version};
+            config = configLib.rawConfig {
+              configsSrc = ./configs;
+              inherit version target;
+            };
             osi = analysisLib.osiConfig { inherit kernel version target; };
             cosi = analysisLib.cosiJson { inherit kernel version target; };
             perf = mkPerf {
@@ -146,6 +154,10 @@
           #   nix build .#packages.x86_64-linux."boot-4.10-x86_64"
           (lib.nameValuePair "boot-${r.version}-${r.target}"
             (bootLib.forCell { inherit (r) kernel version target; }))
+          # Replaces `./build.sh --config-only`. Advisory, not a gate -- see
+          # nix/lint.nix for why asserting on it would be wrong.
+          (lib.nameValuePair "config-lint-${r.version}-${r.target}"
+            (lintLib.forCell { inherit (r) kernel config src version target; }))
         ])
         allRecords);
 
@@ -192,6 +204,10 @@
         # nixdev_0.1.0's 4.10/x86_64 is one -- see nix/boot.nix.
         boot-check = bootLib.all { cells = allRecords; };
 
+        # Every cell's savedefconfig lint in one build, for a config sweep.
+        # The nix replacement for `./build.sh --config-only` across all targets.
+        config-lint = lintLib.all { cells = allRecords; };
+
         # The analysis tools, pinned. Exposed so their provenance is inspectable
         # and so igloo_driver can reuse dwarf2json for its own ISF (it runs the
         # same fork over igloo.ko) instead of re-deriving the pin.
@@ -214,6 +230,8 @@
           # separator -- quote the attribute or the build fails to resolve.
           echo '  nix build .#packages.x86_64-linux."kernel-6.13-armel"   one cell'
           echo "  nix build .#all                                        every buildable cell"
+          echo "  nix build .#boot-check                                 every kernel actually boots"
+          echo "  nix build .#config-lint                                savedefconfig lint (was build.sh --config-only)"
           echo "  ./scripts/verify-series.sh ...                         prove a series matches its fork branch"
         '';
       };
