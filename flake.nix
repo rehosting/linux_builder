@@ -111,6 +111,7 @@
       mkDriver = import ./nix/driver.nix { inherit pkgs kernelsmith; };
       bootLib = import ./nix/boot.nix { inherit pkgs qemuPkgs; };
       lintLib = import ./nix/lint.nix { inherit pkgs; };
+      cfgTools = import ./nix/config-tools.nix { inherit pkgs; };
 
       # Per-cell record carrying everything the assembly needs.
       cellRecords = version: map
@@ -208,6 +209,21 @@
         # The nix replacement for `./build.sh --config-only` across all targets.
         config-lint = lintLib.all { cells = allRecords; };
 
+        # THE config gate: does every cell END UP with what IGLOO needs?
+        # Reads the post-olddefconfig .config, not the fragment -- see
+        # nix/config-tools.nix for why that distinction is the whole point.
+        config-required = cfgTools.requiredCheck { cells = allRecords; };
+
+        # Duplicated assignments, and options that did not survive
+        # olddefconfig. Advisory.
+        config-redundant = cfgTools.redundancyReport {
+          cells = allRecords;
+          configsSrc = ./configs;
+        };
+
+        # `nix run .#config-explain -- 6.13 x86_64 CONFIG_IGLOO`
+        config-explain = cfgTools.explainScript;
+
         # The analysis tools, pinned. Exposed so their provenance is inspectable
         # and so igloo_driver can reuse dwarf2json for its own ISF (it runs the
         # same fork over igloo.ko) instead of re-deriving the pin.
@@ -218,6 +234,14 @@
       # gives you exactly what the kernel builds from -- useful for inspecting
       # what the series produces without a full kernel build.
       inherit sources;
+
+      # `nix run .#config-explain -- <version> <target> CONFIG_X`. An app rather
+      # than only a package so it is one command from a clean checkout; it reads
+      # configs/ and builds no kernel, so it stays instant.
+      apps.${system}.config-explain = {
+        type = "app";
+        program = "${cfgTools.explainScript}/bin/config-explain";
+      };
 
       # Cells we cannot build until kernelsmith gains these arches.
       missingArches = kernelsmithMissing;
@@ -231,6 +255,9 @@
           echo '  nix build .#packages.x86_64-linux."kernel-6.13-armel"   one cell'
           echo "  nix build .#all                                        every buildable cell"
           echo "  nix build .#boot-check                                 every kernel actually boots"
+          echo "  nix build .#config-required                            configs satisfy the IGLOO contract (gate)"
+          echo '  nix run   .#config-explain -- 6.13 x86_64 CONFIG_IGLOO  where does an option come from'
+          echo "  nix build .#config-redundant                           duplicate / dead config lines"
           echo "  nix build .#config-lint                                savedefconfig lint (was build.sh --config-only)"
           echo "  ./scripts/verify-series.sh ...                         prove a series matches its fork branch"
         '';

@@ -199,6 +199,23 @@ jobs:
       - name: Every kernel boots
         run: nix build --print-build-logs --print-out-paths .#boot-check
 
+      # The config contract: does every cell END UP with the options IGLOO
+      # needs? Reads the post-olddefconfig .config, not the fragments, because
+      # olddefconfig silently drops options whose dependencies are unmet -- so
+      # a fragment saying CONFIG_MODVERSIONS=y proves nothing about what
+      # shipped. Sibling of the boot check: both exist for kernels that build
+      # and boot and then quietly do not do their job.
+      - name: Configs satisfy the IGLOO contract
+        run: nix build --print-build-logs --print-out-paths .#config-required
+
+      # Advisory, so it must not fail the job -- but the output belongs in the
+      # log where a config change can be reviewed against it.
+      - name: Config redundancy report (advisory)
+        continue-on-error: true
+        run: |
+          out=$(nix build --no-link --print-out-paths .#config-redundant)
+          cat "$out"
+
       - name: Release tarballs assemble
         run: |
           set -euo pipefail

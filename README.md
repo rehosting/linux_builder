@@ -47,6 +47,7 @@ this repo and a fork branch.
 |---|---|
 | `nix build .#boot-check` | **every kernel actually boots** under the qemu machine penguin runs it on |
 | `nix build .#shape-check` | each artifact's ELF class, byte order and machine match its target name |
+| `nix build .#config-required` | every kernel ended up with the options IGLOO needs (see [Modifying configs](#modifying-configs)) |
 | `nix flake check` | the above, plus evaluation of every output |
 
 `boot-check` is the one that matters most, and it is newer than the rest.
@@ -66,7 +67,47 @@ Configs live in `configs/<version>/<target>`, with shared fragments pulled in by
 `#include` (`all-common.inc`, `arm-common.inc`, ...). They are assembled with
 `cpp -P -undef` and then `olddefconfig`.
 
-After changing one, look at its lint:
+**The file you edit is almost never the file an option comes from,** and the
+config the kernel is *built* with is a third thing again — `olddefconfig` runs
+last and drops anything whose dependencies are unmet. Three tools follow from
+that, one per question:
+
+| question | command |
+|---|---|
+| Did every cell **end up** with what IGLOO needs? | `nix build .#config-required` |
+| Where does `CONFIG_X` for this cell **come from**? | `nix run .#config-explain -- 6.13 x86_64 CONFIG_IGLOO` |
+| Which lines am I writing that **do nothing**? | `nix build .#config-redundant` |
+
+`config-required` is a **gate**, and it reads the shipped `.config` rather than
+the fragments — that distinction is the entire point. It asserts the options
+whose absence is *silent*: a kernel that builds, boots, and then does not do
+its job. `CONFIG_MODVERSIONS` is the sharpest of them; without it a mismatched
+`igloo.ko` loads quietly instead of being rejected, which is strictly worse
+than the mismatch. See `nix/config-tools.nix`, where every entry says what
+breaks without it.
+
+`config-explain` builds no kernel, so it is instant. It exists because grep
+does not answer the question: `CONFIG_IGLOO` is set in `all-common.inc` and no
+target sets it directly, so grepping `configs/6.13/x86_64` finds nothing.
+
+```
+$ nix run .#config-explain -- 6.13 armel CONFIG_MODULES
+  CONFIG_MODULES=y
+      configs/6.13/all-common.inc:159
+      via armel -> arm-common.inc -> all-common.inc
+* CONFIG_MODULES=y
+      configs/6.13/all-common.inc:162
+      via armel -> arm-common.inc -> all-common.inc
+
+  2 assignments; the one marked * wins (cpp: last wins).
+```
+
+`config-redundant` separates two things that look alike and are not: an option
+assigned **twice** (always a bug — only the last has effect) and an option that
+**did not survive olddefconfig** (usually a dependency you did not notice). It
+currently reports 595 duplicate assignments across the matrix.
+
+And the raw savedefconfig lint, per cell or across the matrix:
 
 ```sh
 nix build .#packages.x86_64-linux."config-lint-6.13-armel"   # one cell
