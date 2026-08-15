@@ -16,11 +16,12 @@ on:
     branches: [main, nix-patchset]
     # Cut a nix-built PRERELEASE from a tag, without touching the version line.
     #
-    # Deliberately NOT `dev_*`: that prefix already triggers the Docker
-    # workflow (build.yml), so a shared prefix would have both pipelines cut a
-    # release for the same tag and race `version-increment` for the same vX.Y.Z.
-    # `nixdev_*` does not match `dev_*` -- these globs are anchored -- so the two
-    # stay independent while both release paths exist.
+    # The prefix is `nixdev_*` rather than `dev_*` for a reason that has now
+    # expired: `dev_*` triggered the Docker workflow (build.yml), and a shared
+    # prefix would have had both pipelines cut a release for the same tag and
+    # race `version-increment` for the same vX.Y.Z. build.yml is gone, so the
+    # collision is impossible -- but the prefix stays, because nixdev_0.1.0 and
+    # nixdev_0.1.1 are already published and pinned by downstream lockfiles.
     tags: ['nixdev_*']
   workflow_dispatch:
     inputs:
@@ -130,9 +131,10 @@ jobs:
             ".#packages.x86_64-linux.\"boot-${{ matrix.cell }}\""
 
 
-  # The full 19-cell matrix: on demand, and on a `nixdev_*` tag, where it is
-  # also what produces the release. Not on every PR -- it is the expensive one,
-  # and the gate above catches the failures that are not arch-specific.
+  # The full 19-cell matrix: on demand, on a `nixdev_*` tag, and on a merge to
+  # main -- in the last two cases it is also what produces the release. Not on
+  # every PR: it is the expensive one, and the gate above catches the failures
+  # that are not arch-specific.
   #
   # Running it on the tag has a second effect that matters for downstream
   # testing: this is a push event, so nix-setup's skip-push default does NOT
@@ -145,9 +147,12 @@ jobs:
     needs: series
     permissions:
       contents: write
+    # Also on a push to main: with the Docker pipeline gone, this job is the
+    # ONLY thing that cuts a release, so a merge has to run the whole matrix.
     if: >-
       ${{ (github.event_name == 'workflow_dispatch' && inputs.full_matrix)
-          || startsWith(github.ref, 'refs/tags/nixdev_') }}
+          || startsWith(github.ref, 'refs/tags/nixdev_')
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare runner directories
@@ -240,9 +245,10 @@ jobs:
             echo "  $v: perf for $perf of $tot targets"
           done
 
-      # Prerelease only, and only from a nixdev_* tag. The tag IS the version --
-      # no version-increment here, so this cannot collide with the Docker
-      # pipeline's vX.Y.Z line while both exist.
+      # Prerelease from a nixdev_* tag: the tag IS the version, no increment.
+      # Kept distinct from the vX.Y.Z release below so a downstream repo can be
+      # handed a fixed, immutable kernel set to test against without that
+      # consuming a version number.
       - name: Publish prerelease
         if: ${{ startsWith(github.ref, 'refs/tags/nixdev_') }}
         uses: softprops/action-gh-release@v1
@@ -263,3 +269,36 @@ jobs:
             * `perf` for all 19 cells (the Docker path shipped 7 of 19)
             * no `powerpcle` -- it was byte-identical to `powerpc` and
               big-endian despite the name
+
+      # ---- the vX.Y.Z version line -------------------------------------
+      # Ported from the deleted build.yml. With the Docker pipeline gone this
+      # is the only thing that cuts a real release, so it lives here now; the
+      # collision hazard that kept the two apart no longer exists.
+      #
+      # `use_api: true` reads GIT TAGS via /git/matching-refs/tags/, takes the
+      # highest by `sort -V`, and applies `increment` (default: patch). So the
+      # way to move the version LINE is to push a bare marker tag at main's tip
+      # and let the patch increment continue from it -- v4.0.0 -> v4.0.1.
+      #
+      # Do NOT set `increment: minor` to force a jump. It is not self-clearing,
+      # so it silently bumps the release AFTER it as well, until someone
+      # remembers to revert. The marker tag has no such landmine.
+      - name: Get next version
+        id: version
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: reecetech/version-increment@2023.10.1
+        with:
+          use_api: true
+
+      - name: Publish release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            kernels-latest.tar.gz
+            kernel-devel-all.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          generate_release_notes: true
+          prerelease: false

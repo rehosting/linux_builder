@@ -127,16 +127,38 @@ discarded its own exit status.
 
 ## Releases
 
-Pushing a `nixdev_*` tag runs the full 19-cell matrix, boot-tests it, publishes
-`kernels-latest.tar.gz` + `kernel-devel-all.tar.gz` as a **prerelease**, and
-pushes every cell to the `rehosting-tools` Cachix — which is what lets
-downstream repos substitute these kernels instead of cross-building them.
+There are two, and they are deliberately separate.
+
+**`vX.Y.Z` — the real version line.** Cut automatically on every merge to
+`main`. The full matrix runs, boot-tests, and publishes `kernels-latest.tar.gz`
++ `kernel-devel-all.tar.gz`. The version comes from
+`reecetech/version-increment` with `use_api: true`, which reads **git tags**,
+takes the highest by `sort -V`, and bumps the patch.
+
+To move the version *line* (say 3.6.x → 4.0.x), **push a bare marker tag at
+main's tip** and let the patch increment continue from it:
+
+```sh
+git tag v4.0.0 <main-tip> && git push origin v4.0.0   # marker only, no release
+# the next merge to main then cuts v4.0.1
+```
+
+Do **not** set `increment: minor` in the workflow to force a jump. It is not
+self-clearing, so it silently bumps the release *after* it as well, until
+someone remembers to revert. The marker tag has no such landmine.
+
+**`nixdev_*` — prereleases, off the version line.** The tag *is* the version;
+no increment. For handing a downstream repo a fixed, immutable kernel set to
+test against without consuming a version number.
 
 ```sh
 git tag -a nixdev_0.1.2 -m "..." && git push origin nixdev_0.1.2
 ```
 
-The tag glob is anchored, so `nixdev_*` and the old `dev_*` never collide.
+Both run the full matrix, and both are `push` events — so `nix-setup`'s
+skip-push default does not apply and every cell lands in the `rehosting-tools`
+Cachix. That is what lets downstream repos *substitute* these kernels instead
+of cross-building all 19 in their own CI.
 
 ## Consumers
 
