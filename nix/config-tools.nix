@@ -32,6 +32,7 @@ let
     CONFIG_KALLSYMS_ALL = "OSI symbol resolution reads kallsyms";
     CONFIG_KPROBES = "penguin's kprobe-based instrumentation";
     CONFIG_DEBUG_INFO = "dwarf2json builds the ISF from DWARF; no debug info, no ISF";
+    CONFIG_SQUASHFS_XZ = "xz is the dominant squashfs compressor in firmware. CONFIG_SQUASHFS=y without it mounts nothing: firmware that loop-mounts a nested squashfs at boot fails EINVAL and reads downstream as a broken extraction, not a kernel config";
   };
 
   # ---------------------------------------------------------------------
