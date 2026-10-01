@@ -1,0 +1,64 @@
+From 15aa2a5102f88d689f9f1a7aa473b1c2210e60c2 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Thu, 1 Oct 2026 19:36:53 -0400
+Subject: [PATCH 39/42] igloo: drop the igloo_ioctl hook
+
+igloo_driver's ioctl_hc was its only consumer, and Penguin never enabled
+it; igloo_driver removes ioctl_hc in "igloo: remove ops and hooks Penguin
+never consumes". Restores fs/ioctl.c to upstream.
+---
+ drivers/igloobase/igloo_weaksyms.c | 12 ------------
+ fs/ioctl.c                         | 10 ----------
+ 2 files changed, 22 deletions(-)
+
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+index 2fa239ea..4dd4388c 100644
+--- a/drivers/igloobase/igloo_weaksyms.c
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -75,18 +75,6 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
+ }
+ EXPORT_SYMBOL(igloo_hc_open);
+ 
+-void (*igloo_ioctl_module)(int error, struct file *filp, unsigned int cmd);
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp)
+-{
+-    if (igloo_ioctl_module) {
+-        igloo_ioctl_module(error, filp, cmd);
+-    } else {
+-        // printk(KERN_EMERG "igloo_ioctl: unimplemented\n");
+-    }
+-}
+-EXPORT_SYMBOL(igloo_ioctl);
+-
+ /* Export internal symbols needed for introspection research */
+ 
+ // Symbol lookup functions - now pulled in by trace/syscall.h
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index de77adea..cb9b0294 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
+@@ -612,11 +612,6 @@ static int ioctl_file_dedupe_range(struct file *file, void __user *arg)
+ 	return ret;
+ }
+ 
+-#ifdef CONFIG_IGLOO
+-// forward declare igloo_ioctl
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user * argp);
+-#endif
+-
+ /*
+  * When you add any new common ioctls to the switches above and below
+  * please update compat_sys_ioctl() too.
+@@ -688,11 +683,6 @@ int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
+ 			error = vfs_ioctl(filp, cmd, arg);
+ 		break;
+ 	}
+-
+-#ifdef CONFIG_IGLOO
+-	igloo_ioctl(error, inode, filp, cmd, argp);
+-#endif
+-
+ 	return error;
+ }
+ 

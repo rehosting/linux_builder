@@ -31,3 +31,7 @@ core/igloo.h-drop-declarations-for-forward-declarations.patch
 core/update-hypercall.h.patch
 6.13/0036-igloo-move-into-procfs.patch
 6.13/0037-igloo-move-into-signal-handler.patch
+6.13/0038-igloo-drop-the-igloo_ioctl-hook.patch
+6.13/0039-igloo-drop-the-igloo_should_block_mount-hook.patch
+6.13/0040-igloo-drop-the-igloo_block_halt-boot-argument.patch
+6.13/0041-igloobase-drop-the-sched_switch-task-switch-hypercal.patch
