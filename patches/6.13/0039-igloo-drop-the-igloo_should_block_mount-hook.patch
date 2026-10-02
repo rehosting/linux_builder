@@ -1,0 +1,68 @@
+From a2f649f8a9fff28525f31df44bdd488de2b1cb91 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Thu, 1 Oct 2026 19:36:51 -0400
+Subject: [PATCH 39/41] igloo: drop the igloo_should_block_mount hook
+
+igloo_driver's block_mounts was its only consumer; igloo_driver removes it
+in "igloo: remove ops and hooks Penguin never consumes". Restores
+fs/namespace.c to upstream.
+---
+ drivers/igloobase/igloo_weaksyms.c | 14 --------------
+ fs/namespace.c                     | 12 +-----------
+ 2 files changed, 1 insertion(+), 25 deletions(-)
+
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+index 5a716f177..c4bb0fb87 100644
+--- a/drivers/igloobase/igloo_weaksyms.c
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -16,20 +16,6 @@ igloo_syscall_return_t igloo_syscall_return_hook = NULL;
+ EXPORT_SYMBOL(igloo_syscall_enter_hook);
+ EXPORT_SYMBOL(igloo_syscall_return_hook);
+ 
+-// Function pointer for override
+-bool (*igloo_should_block_mount_module)(struct path *path);
+-bool igloo_should_block_mount(struct path *path);
+-bool igloo_should_block_mount(struct path *path)
+-{
+-    if (igloo_should_block_mount_module) {
+-        return igloo_should_block_mount_module(path);
+-    } else {
+-        // printk(KERN_INFO "igloo_should_block_mount: default implementation called\n");
+-        return false;
+-    }
+-}
+-EXPORT_SYMBOL(igloo_should_block_mount);
+-
+ void (*igloo_sock_release_module)(struct socket *sock);
+ void igloo_sock_release(struct socket *sock)
+ {
+diff --git a/fs/namespace.c b/fs/namespace.c
+index 921c99f2c..eac057e56 100644
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -3746,11 +3746,6 @@ static char *copy_mount_string(const void __user *data)
+ 	return data ? strndup_user(data, PATH_MAX) : NULL;
+ }
+ 
+-#ifdef CONFIG_IGLOO
+-// forward declare igloo_should_block_mount
+-bool igloo_should_block_mount(struct path *path);
+-#endif
+-
+ /*
+  * Flags is a 32-bit value that allows up to 31 non-fs dependent flags to
+  * be given to the mount() call (ie: read-only, no-dev, no-suid etc).
+@@ -3789,12 +3784,7 @@ int path_mount(const char *dev_name, struct path *path,
+ 		return -EPERM;
+ 	if (flags & SB_MANDLOCK)
+ 		warn_mandlock();
+-	
+-#ifdef CONFIG_IGLOO
+-	if (igloo_should_block_mount(path)){
+-		return 0;
+-	}
+-#endif
++
+ 	/* Default to relatime unless overriden */
+ 	if (!(flags & MS_NOATIME))
+ 		mnt_flags |= MNT_RELATIME;

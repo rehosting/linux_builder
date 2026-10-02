@@ -1,0 +1,113 @@
+From 937186948f0937685da6d659ecdaf6f4c1966d93 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Thu, 1 Oct 2026 19:36:54 -0400
+Subject: [PATCH 42/42] igloobase: drop the sched_switch task-switch hypercall
+
+osi_notifier issued IGLOO_HYP_OSI_TASK_SWITCH (0x3337) on every context
+switch, and Penguin registers no handler for it.
+---
+ drivers/igloobase/Makefile       |  2 +-
+ drivers/igloobase/igloobase.c    |  3 --
+ drivers/igloobase/igloobase.h    |  1 -
+ drivers/igloobase/osi_notifier.c | 60 --------------------------------
+ 4 files changed, 1 insertion(+), 65 deletions(-)
+ delete mode 100644 drivers/igloobase/osi_notifier.c
+
+diff --git a/drivers/igloobase/Makefile b/drivers/igloobase/Makefile
+index 1865aadf..bba2bdc7 100644
+--- a/drivers/igloobase/Makefile
++++ b/drivers/igloobase/Makefile
+@@ -1,2 +1,2 @@
+-obj-$(CONFIG_IGLOO) += osi_notifier.o syscalls_info_report.o \
++obj-$(CONFIG_IGLOO) += syscalls_info_report.o \
+ 						igloobase.o igloo_weaksyms.o igloo_args.o
+\ No newline at end of file
+diff --git a/drivers/igloobase/igloobase.c b/drivers/igloobase/igloobase.c
+index 7462e9ee..463ecf33 100644
+--- a/drivers/igloobase/igloobase.c
++++ b/drivers/igloobase/igloobase.c
+@@ -9,9 +9,6 @@
+ static int __init igloo_base_init(void) {
+ 	int ret;
+ 	printk(KERN_EMERG "IGLOOBase: Initializing\n");
+-    if ((ret = osi_notifier_init()) != 0) {
+-        printk(KERN_ERR "Failed to register osi_notifier_init\n");
+-    }
+     if ((ret = syscalls_info_report()) != 0) {
+ 		printk(KERN_ERR "Failed to register syscalls_hc returning %d\n", ret);
+ 	}
+diff --git a/drivers/igloobase/igloobase.h b/drivers/igloobase/igloobase.h
+index 3fe72b89..effce58f 100644
+--- a/drivers/igloobase/igloobase.h
++++ b/drivers/igloobase/igloobase.h
+@@ -1,2 +1 @@
+-int osi_notifier_init(void);
+ int syscalls_info_report(void);
+\ No newline at end of file
+diff --git a/drivers/igloobase/osi_notifier.c b/drivers/igloobase/osi_notifier.c
+deleted file mode 100644
+index 9d02d2f8..00000000
+--- a/drivers/igloobase/osi_notifier.c
++++ /dev/null
+@@ -1,60 +0,0 @@
+-#include <linux/module.h>
+-#include <linux/kernel.h>
+-#include <linux/init.h>
+-#include <linux/kprobes.h>
+-#include <linux/mm.h>
+-#include <linux/sched.h>
+-#include <linux/slab.h>
+-#include "hypercall.h"
+-#include <linux/binfmts.h>
+-#include <linux/ptrace.h>
+-#include <linux/utsname.h>
+-#include <linux/types.h>
+-#include <linux/module.h>	/* Needed by all modules */
+-#include <linux/kernel.h>	/* Needed for KERN_INFO */
+-#include <linux/utsname.h>
+-#include <linux/version.h>
+-#include <linux/syscalls.h>
+-#include <linux/security.h>
+-#include <linux/sched.h>
+-#include <linux/mm.h>
+-#include <linux/fs.h>
+-#include <linux/file.h>
+-#include <linux/fdtable.h>
+-#include <linux/dcache.h>
+-#include <linux/mount.h>
+-#include <linux/version.h>
+-#include <asm/syscall.h>
+-#include <linux/tracepoint.h>
+-#include <linux/trace_events.h>
+-#include <trace/events/sched.h>
+-#include "igloo.h"
+-#include "igloobase.h"
+-
+-#define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
+-
+-// Define a tracepoint probe function for sched_switch with the correct signature
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,18,0)
+-static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
+-                               struct task_struct *next, unsigned int prev_state)
+-#else
+-static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
+-                               struct task_struct *next)
+-#endif
+-{
+-    // Notify hypervisor about task switch using task pointers
+-    igloo_hypercall2(IGLOO_HYP_OSI_TASK_SWITCH, (unsigned long)prev, (unsigned long)next);
+-}
+-
+-int osi_notifier_init(void) {
+-    int ret = 0;
+-
+-    // Register the sched_switch tracepoint
+-    ret = register_trace_sched_switch(probe_sched_switch, NULL);
+-    if (ret) {
+-        printk(KERN_ERR "IGLOO: Failed to register sched_switch tracepoint, returned %d\n", ret);
+-    } else {
+-        printk(KERN_INFO "IGLOO: Successfully registered sched_switch tracepoint\n");
+-    }
+-    return 0;
+-}
+\ No newline at end of file

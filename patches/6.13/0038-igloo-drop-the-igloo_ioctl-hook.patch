@@ -1,0 +1,79 @@
+From a7934122b7e430374c71f4b4ea29342a1c72ec03 Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Thu, 1 Oct 2026 19:36:51 -0400
+Subject: [PATCH 38/41] igloo: drop the igloo_ioctl hook
+
+igloo_driver's ioctl_hc was its only consumer, and Penguin never enabled
+it; igloo_driver removes ioctl_hc in "igloo: remove ops and hooks Penguin
+never consumes". Restores fs/ioctl.c to upstream.
+---
+ drivers/igloobase/igloo_weaksyms.c | 12 ------------
+ fs/ioctl.c                         | 18 ++++--------------
+ 2 files changed, 4 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/igloobase/igloo_weaksyms.c b/drivers/igloobase/igloo_weaksyms.c
+index 33e83342d..5a716f177 100644
+--- a/drivers/igloobase/igloo_weaksyms.c
++++ b/drivers/igloobase/igloo_weaksyms.c
+@@ -75,18 +75,6 @@ void igloo_hc_open(int dfd, const char __user *filename, struct open_how *how)
+ }
+ EXPORT_SYMBOL(igloo_hc_open);
+ 
+-void (*igloo_ioctl_module)(int error, struct file *filp, unsigned int cmd);
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp);
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user *argp)
+-{
+-    if (igloo_ioctl_module) {
+-        igloo_ioctl_module(error, filp, cmd);
+-    } else {
+-        // printk(KERN_EMERG "igloo_ioctl: unimplemented\n");
+-    }
+-}
+-EXPORT_SYMBOL(igloo_ioctl);
+-
+ /* Export internal symbols needed for introspection research */
+ 
+ // Symbol lookup functions - now pulled in by trace/syscall.h
+diff --git a/fs/ioctl.c b/fs/ioctl.c
+index 270ad1343..638a36be3 100644
+--- a/fs/ioctl.c
++++ b/fs/ioctl.c
+@@ -789,11 +789,6 @@ static int ioctl_get_fs_sysfs_path(struct file *file, void __user *argp)
+ 	return copy_to_user(argp, &u, sizeof(u)) ? -EFAULT : 0;
+ }
+ 
+-#ifdef CONFIG_IGLOO
+-// forward declare igloo_ioctl
+-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user * argp);
+-#endif
+-
+ /*
+  * do_vfs_ioctl() is not for drivers and not intended to be EXPORT_SYMBOL()'d.
+  * It's just a simple helper for sys_ioctl and compat_sys_ioctl.
+@@ -804,8 +799,8 @@ void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int
+  * The LSM mailing list should also be notified of any command additions or
+  * changes, as specific LSMs may be affected.
+  */
+-static int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
+-			unsigned long arg)
++static int do_vfs_ioctl(struct file *filp, unsigned int fd,
++			unsigned int cmd, unsigned long arg)
+ {
+ 	void __user *argp = (void __user *)arg;
+ 	struct inode *inode = file_inode(filp);
+@@ -886,13 +881,8 @@ static int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
+ 		return ioctl_get_fs_sysfs_path(filp, argp);
+ 
+ 	default:
+-		if (S_ISREG(inode->i_mode)){
+-			int error = file_ioctl(filp, cmd, argp);
+-			#ifdef CONFIG_IGLOO
+-			igloo_ioctl(error, inode, filp, cmd, argp);
+-			#endif
+-			return error;
+-		}
++		if (S_ISREG(inode->i_mode))
++			return file_ioctl(filp, cmd, argp);
+ 		break;
+ 	}
+ 
