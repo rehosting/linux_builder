@@ -31,3 +31,4 @@ core/igloo.h-drop-declarations-for-forward-declarations.patch
 core/update-hypercall.h.patch
 6.13/0036-igloo-move-into-procfs.patch
 6.13/0037-igloo-move-into-signal-handler.patch
+6.13/0038-arm64-forward-IGLOO-hypercalls-to-the-hypervisor-und.patch

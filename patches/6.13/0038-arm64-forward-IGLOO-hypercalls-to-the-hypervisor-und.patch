@@ -1,0 +1,138 @@
+From f98c2aa365c60761825562e86f1afa36e639eed8 Mon Sep 17 00:00:00 2001
+From: Jacques Becker <jacques.becker20@gmail.com>
+Date: Mon, 5 Oct 2026 01:13:43 -0400
+Subject: [PATCH] arm64: forward IGLOO hypercalls to the hypervisor under KVM
+
+The arm64 IGLOO hypercall, "msr S0_0_c5_c0_0, xzr", and the one 32-bit
+compat tasks use, "mcr p7, 0, r0, c0, c0, 0", are intercepted by QEMU's
+TCG, but on hardware they are unallocated encodings: under KVM they UNDEF
+straight to the guest kernel and never reach QEMU, so the first hypercall
+at boot oopses, and compat userspace (e.g. armel firmware on the arm64
+kernel) gets SIGILL.
+
+Catch them in the EL1 and EL0 undefined-instruction handlers and re-issue
+them as an SMCCC HVC (function ID 0xc3001337, SMC64 fast call, OEM range),
+which penguin's QEMU asks KVM to forward to userspace. x0 carries the
+function ID and the original x0 moves to x6; x1-x5 and x8 are passed as
+the caller left them and copied back afterwards, so QEMU-side handlers
+that write those registers behave as they do under TCG. The result is
+returned in x0. For compat tasks the number comes from (and goes back
+to) r7, and everything copied back is truncated to 32 bits.
+
+Only done when the SMCCC conduit is HVC, as it is for a KVM guest on
+QEMU's virt machine; otherwise the instructions UNDEF as before. Under
+TCG the instructions never trap, so this path is not taken.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/kernel/traps.c | 76 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 76 insertions(+)
+
+diff --git a/arch/arm64/kernel/traps.c b/arch/arm64/kernel/traps.c
+index 4e26bd356..9a2da54b1 100644
+--- a/arch/arm64/kernel/traps.c
++++ b/arch/arm64/kernel/traps.c
+@@ -6,6 +6,7 @@
+  * Copyright (C) 2012 ARM Ltd.
+  */
+ 
++#include <linux/arm-smccc.h>
+ #include <linux/bug.h>
+ #include <linux/context_tracking.h>
+ #include <linux/signal.h>
+@@ -457,6 +458,75 @@ void arm64_notify_segfault(unsigned long addr)
+ 	force_signal_inject(SIGSEGV, code, addr, 0);
+ }
+ 
++#ifdef CONFIG_IGLOO
++/*
++ * IGLOO hypercalls use "msr S0_0_c5_c0_0, xzr" (x8 = number, x0-x3 =
++ * arguments, result in x0; see include/hypercall.h), or for 32-bit compat
++ * tasks "mcr p7, 0, r0, c0, c0, 0" (r7 = number, r0-r3 arguments, result in
++ * r0). QEMU's TCG intercepts them, but on hardware they are unallocated
++ * encodings that UNDEF to us. Under KVM, re-issue them as an SMCCC call,
++ * which penguin's QEMU asks KVM to forward to it. x0 must hold the function
++ * ID, so the original x0/r0 moves to x6; x1-x5 and the number (in x8) are
++ * passed as the caller left them. x0 comes back as the result, and x1-x5 and
++ * the number register are copied back too, since QEMU-side handlers may write
++ * them, as they can under TCG.
++ */
++#define IGLOO_HYPERCALL_INSN	0xd500501f	/* msr S0_0_c5_c0_0, xzr */
++/* mcr p7, 0, r0, c0, c0, 0: A32 (cond AL) and T32 share this encoding */
++#define IGLOO_HYPERCALL_INSN_32	0xee000710
++#define IGLOO_SMCCC_HYPERCALL	0xc3001337	/* SMC64 fast call, OEM range */
++
++static void igloo_forward_hypercall(struct pt_regs *regs, int nr_reg,
++				    unsigned long mask)
++{
++	register unsigned long x0 asm("x0") = IGLOO_SMCCC_HYPERCALL;
++	register unsigned long x1 asm("x1") = regs->regs[1];
++	register unsigned long x2 asm("x2") = regs->regs[2];
++	register unsigned long x3 asm("x3") = regs->regs[3];
++	register unsigned long x4 asm("x4") = regs->regs[4];
++	register unsigned long x5 asm("x5") = regs->regs[5];
++	register unsigned long x6 asm("x6") = regs->regs[0];
++	register unsigned long x8 asm("x8") = regs->regs[nr_reg];
++
++	/* Handlers can write any GPR; keep the compiler out of the rest. */
++	asm volatile("hvc #0"
++		     : "+r" (x0), "+r" (x1), "+r" (x2), "+r" (x3),
++		       "+r" (x4), "+r" (x5), "+r" (x6), "+r" (x8)
++		     :
++		     : "x7", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
++		       "x16", "x17", "memory");
++
++	regs->regs[0] = x0 & mask;
++	regs->regs[1] = x1 & mask;
++	regs->regs[2] = x2 & mask;
++	regs->regs[3] = x3 & mask;
++	regs->regs[4] = x4 & mask;
++	regs->regs[5] = x5 & mask;
++	regs->regs[nr_reg] = x8 & mask;
++}
++
++static bool try_emulate_igloo_hypercall(struct pt_regs *regs, u32 insn)
++{
++	bool compat = compat_user_mode(regs);
++
++	if (insn != (compat ? IGLOO_HYPERCALL_INSN_32 : IGLOO_HYPERCALL_INSN) ||
++	    arm_smccc_1_1_get_conduit() != SMCCC_CONDUIT_HVC)
++		return false;
++
++	if (compat)
++		igloo_forward_hypercall(regs, 7, U32_MAX);
++	else
++		igloo_forward_hypercall(regs, 8, ~0UL);
++	arm64_skip_faulting_instruction(regs, 4);
++	return true;
++}
++#else
++static bool try_emulate_igloo_hypercall(struct pt_regs *regs, u32 insn)
++{
++	return false;
++}
++#endif
++
+ void do_el0_undef(struct pt_regs *regs, unsigned long esr)
+ {
+ 	u32 insn;
+@@ -468,6 +538,9 @@ void do_el0_undef(struct pt_regs *regs, unsigned long esr)
+ 	if (user_insn_read(regs, &insn))
+ 		goto out_err;
+ 
++	if (try_emulate_igloo_hypercall(regs, insn))
++		return;
++
+ 	if (try_emulate_mrs(regs, insn))
+ 		return;
+ 
+@@ -485,6 +558,9 @@ void do_el1_undef(struct pt_regs *regs, unsigned long esr)
+ 	if (aarch64_insn_read((void *)regs->pc, &insn))
+ 		goto out_err;
+ 
++	if (try_emulate_igloo_hypercall(regs, insn))
++		return;
++
+ 	if (try_emulate_el1_ssbs(regs, insn))
+ 		return;
+ 

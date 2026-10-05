@@ -4,3 +4,12 @@ CONFIG_GPIO_GENERIC_PLATFORM=y
 CONFIG_GPIOLIB=y
 CONFIG_MFD_SYSCON=y
 CONFIG_COMPAT=y
+// Emulate AArch32 instructions ARMv8 removed or deprecated, for 32-bit (armel)
+// firmware userspace run on this kernel, as under KVM on an arm64 host. Old
+// uClibc linuxthreads spins on SWP; CP15 barriers and SETEND are emulated by
+// default once built, but SWP is "obsolete" and stays UNDEF until
+// /proc/sys/abi/swp is set (penguin's guest init does that).
+CONFIG_ARMV8_DEPRECATED=y
+CONFIG_SWP_EMULATION=y
+CONFIG_CP15_BARRIER_EMULATION=y
+CONFIG_SETEND_EMULATION=y
