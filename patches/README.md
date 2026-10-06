@@ -18,7 +18,7 @@ Blank lines and `#` comments are ignored (quilt convention).
 
 | version | base | patches | of which shared |
 |---|---|---|---|
-| 4.10 | `v4.10` | 38 | 5 |
+| 4.10 | `v4.10` | 39 | 5 |
 | 6.13 | `v6.13` | 33 | 5 |
 
 ## How much is really shared — read this before assuming

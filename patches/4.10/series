@@ -36,3 +36,4 @@ core/igloo.h-drop-declarations-for-forward-declarations.patch
 core/update-hypercall.h.patch
 4.10/0037-igloo-move-into-procfs.patch
 4.10/0038-igloo-move-into-signal-handler.patch
+4.10/0039-igloo-make-CONFIG_IGLOO-n-build.patch

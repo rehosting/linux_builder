@@ -1,0 +1,103 @@
+From f2e2ad81df9a895ddb5151fa68c2c77f88c7bd3e Mon Sep 17 00:00:00 2001
+From: Luke Craig <lacraig3@gmail.com>
+Date: Tue, 6 Oct 2026 16:33:24 -0400
+Subject: [PATCH] igloo: make CONFIG_IGLOO=n build
+
+With CONFIG_IGLOO disabled the series did not compile or link on any arch:
+
+- include/linux/syscalls.h only included igloo_syscall_macros.h under
+  CONFIG_IGLOO, but SYSCALL_DEFINEx uses IGLOO_SYSCALL_MAXARGS and the
+  __SC_*_WRAPPER macros unconditionally; the header already carries the
+  !CONFIG_IGLOO stubs, so include it unconditionally.
+- the !CONFIG_IGLOO hook stubs were a bare NULL, so the guarded
+  `if (hook) hook(...)` call expanded to `NULL(...)`. Make them typed
+  function-pointer NULLs and drop the duplicate in syscalls.h.
+- kernel/reboot.c (igloo_block_halt), fs/binfmt_elf.c and arch mmap.c
+  (igloo_task_size) reference variables defined only in
+  drivers/igloobase/igloo_args.c; give them constant fallbacks in igloo.h.
+- kernel/sys.c called igloo_hc_newuname() unconditionally; gate it.
+
+Found building arch/tile, which has no igloo_hypercall implementation and
+so needs CONFIG_IGLOO=n.
+---
+ include/igloo.h                | 6 ++++++
+ include/igloo_syscall_macros.h | 5 +++--
+ include/linux/syscalls.h       | 8 +++-----
+ kernel/sys.c                   | 2 ++
+ 4 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/include/igloo.h b/include/igloo.h
+index 1de6832e..9663e373 100644
+--- a/include/igloo.h
++++ b/include/igloo.h
+@@ -4,8 +4,14 @@
+ #include <linux/socket.h>
+ #include <linux/binfmts.h>
+ 
++#ifdef CONFIG_IGLOO
+ extern unsigned long igloo_task_size; // mmap.c
+ extern bool igloo_block_halt; // reboot.c
++#else
++/* Both are defined in drivers/igloobase/igloo_args.c (CONFIG_IGLOO only). */
++#define igloo_task_size 0UL
++#define igloo_block_halt false
++#endif
+ 
+ struct user_arg_ptr;  // Forward declaration
+ struct syscall_metadata; // Forward declaration for syscall metadata functions
+diff --git a/include/igloo_syscall_macros.h b/include/igloo_syscall_macros.h
+index e8f41b20..6ddc1bed 100644
+--- a/include/igloo_syscall_macros.h
++++ b/include/igloo_syscall_macros.h
+@@ -84,8 +84,9 @@ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ 
+ 
+ #ifndef CONFIG_IGLOO
+-#define igloo_syscall_enter_hook NULL
+-#define igloo_syscall_return_hook NULL
++/* Typed, so `if (hook) hook(...)` still compiles (as dead code). */
++#define igloo_syscall_enter_hook ((igloo_syscall_enter_t)NULL)
++#define igloo_syscall_return_hook ((igloo_syscall_return_t)NULL)
+ #define __SC_ASSIGN_ADDR_WRAPPER(nr, arr, ...) do {} while (0)
+ #define __SC_GEN_SETTER_BODY_WRAPPER(nr, ...) do {} while (0)
+ #else
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index f916d835..b586d65f 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -175,18 +175,16 @@ extern struct trace_event_functions exit_syscall_print_funcs;
+ #define SYSCALL_METADATA(sname, nb, ...)
+ #endif
+ 
+-#ifdef CONFIG_IGLOO
++/* Needed with and without CONFIG_IGLOO: it carries the !IGLOO stubs too. */
+ #include <igloo_syscall_macros.h>
++#ifdef CONFIG_IGLOO
+ /* === Igloo Interception Hooks and Helpers === */
+ 
+ /* Pointers to the actual hook functions */
+ extern igloo_syscall_enter_t igloo_syscall_enter_hook;
+ extern igloo_syscall_return_t igloo_syscall_return_hook;
+ #else /* CONFIG_IGLOO not defined */
+-
+-/* Define stubs or original macros if Igloo is disabled */
+-#define igloo_syscall_enter_hook NULL
+-#define igloo_syscall_return_hook NULL
++/* The hook stubs live in igloo_syscall_macros.h (#ifndef CONFIG_IGLOO). */
+ #endif /* CONFIG_IGLOO */
+ 
+ #define SYSCALL_DEFINE0(sname)                                                                 \
+diff --git a/kernel/sys.c b/kernel/sys.c
+index f019b9cd..2094cd5d 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -1150,7 +1150,9 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
+ 	memcpy(&tmp, utsname(), sizeof(tmp));
+ 	up_read(&uts_sem);
+ 
++#ifdef CONFIG_IGLOO
+ 	igloo_hc_newuname(&tmp);
++#endif
+ 
+ 	if (copy_to_user(name, utsname(), sizeof *name))
+ 		errno = -EFAULT;
