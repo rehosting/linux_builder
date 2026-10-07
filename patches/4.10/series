@@ -37,3 +37,4 @@ core/update-hypercall.h.patch
 4.10/0037-igloo-move-into-procfs.patch
 4.10/0038-igloo-move-into-signal-handler.patch
 4.10/0039-arm64-forward-IGLOO-hypercalls-to-the-hypervisor-und.patch
+4.10/0040-igloobase-make-the-sched_switch-hypercall-opt-in.patch

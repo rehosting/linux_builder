@@ -1,0 +1,56 @@
+From a7b81b3bcb68ba281fb80cef10c4493abeb0256b Mon Sep 17 00:00:00 2001
+From: Jacques Becker <jacques.becker20@gmail.com>
+Date: Mon, 5 Oct 2026 15:36:59 -0400
+Subject: [PATCH] igloobase: make the sched_switch hypercall opt-in
+
+osi_notifier hooks the sched_switch tracepoint and makes a hypercall
+(IGLOO_HYP_OSI_TASK_SWITCH, 0x3337) on every context switch. Nothing in
+penguin registers a handler for it. Under TCG an unhandled hypercall is
+cheap, but under KVM each one is a full VM exit: profiling the RT-AC88U
+rehosting showed ~580 of them per second, the single largest source of
+exits, all of them discarded.
+
+Leave the tracepoint unregistered unless the kernel is booted with
+igloo_osi_task_switch=1.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/igloobase/osi_notifier.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/igloobase/osi_notifier.c b/drivers/igloobase/osi_notifier.c
+index b9ed55d79..a6dc511e9 100644
+--- a/drivers/igloobase/osi_notifier.c
++++ b/drivers/igloobase/osi_notifier.c
+@@ -41,9 +41,28 @@ static void probe_sched_switch(void *data, bool preempt, struct task_struct *pre
+     igloo_hypercall2(IGLOO_HYP_OSI_TASK_SWITCH, (unsigned long)prev, (unsigned long)next);
+ }
+ 
++/*
++ * The sched_switch notifier makes a hypercall on every context switch, and
++ * nothing in penguin consumes it; under KVM each one is a full VM exit, so it
++ * cost hundreds of exits per second for nothing. Off unless asked for with
++ * igloo_osi_task_switch=1 on the kernel command line.
++ */
++static bool osi_task_switch;
++
++static int __init osi_task_switch_setup(char *str)
++{
++    return kstrtobool(str, &osi_task_switch) == 0;
++}
++__setup("igloo_osi_task_switch=", osi_task_switch_setup);
++
+ int osi_notifier_init(void) {
+     int ret = 0;
+ 
++    if (!osi_task_switch) {
++        printk(KERN_INFO "IGLOO: sched_switch notifier disabled (igloo_osi_task_switch=1 enables it)\n");
++        return 0;
++    }
++
+     // Register the sched_switch tracepoint
+     ret = register_trace_sched_switch(probe_sched_switch, NULL);
+     if (ret) {
+-- 
+2.43.0
+
